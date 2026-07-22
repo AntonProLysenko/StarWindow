@@ -1,4 +1,4 @@
-import { DarkTheme, DefaultTheme, ThemeProvider, Stack, usePathname } from 'expo-router';
+import { DarkTheme, DefaultTheme, ThemeProvider, Stack, usePathname, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { StyleSheet, View, useColorScheme } from 'react-native';
 
@@ -19,9 +19,11 @@ import { dvw } from '@/utilities/responsive-dimensions';
 
 export default function RootLayout() {
     const colorScheme = useColorScheme();
+    const router = useRouter();
     const pathname = usePathname();
     const [isLoggedIn, setIsLoggedIn] = useState(() => Boolean(usersService.getUser()));
     const showSidebar = isLoggedIn && pathname !== '/signup' && pathname !== '/login';
+    const isPublicRoute = pathname === '/' || pathname === '/login' || pathname === '/signup';
 
     useEffect(() => {
       const syncAuthState = () => {
@@ -41,6 +43,12 @@ export default function RootLayout() {
         }
       };
     }, []);
+
+    useEffect(() => {
+      if (!isLoggedIn && !isPublicRoute) {
+        router.replace('/');
+      }
+    }, [isLoggedIn, isPublicRoute, router]);
 
     return (
       <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
