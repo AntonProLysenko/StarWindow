@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { usePathname, useRouter } from 'expo-router';
 import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { Palette, Radius } from '@/constants/tokens';
+import { Palette, Radius, alpha } from '@/constants/tokens';
 import * as usersService from '@/utilities/users-service';
 import { dvw, dvh } from '@/utilities/responsive-dimensions';
 
@@ -11,7 +11,6 @@ const navItems = [
   { label: 'Calendar', href: '/calendar' },
   { label: 'Map', href: '/map' },
   { label: 'Events', href: '/events' },
-  { label: 'Launches', href: '/explore' },
   { label: 'Profile', href: '/profile' },
 ] as const;
 
@@ -98,7 +97,7 @@ const styles = StyleSheet.create({
     marginTop: -10,
     width: dvw(3),
     height: dvh(20),
-    backgroundColor: Palette.accentMoon,
+    backgroundColor: Palette.accent,
     borderRadius: 3,
   },
   railTabLabel: {
@@ -108,10 +107,10 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
   },
   railTabLabelActive: {
-    color: Palette.accentMoon,
+    color: Palette.accent,
   },
   logoutTabHovered: {
-    backgroundColor: Palette.accentRed + '14',
+    backgroundColor: alpha(Palette.accentRed, 0.08),
   },
   logoutLabel: {
     fontSize: 12,

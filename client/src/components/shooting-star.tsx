@@ -88,7 +88,7 @@ export function ShootingStar({ delay, glow = true }: { delay: number; glow?: boo
           width: 7,
           height: 7,
           borderRadius: 7,
-          backgroundColor: Palette.white,
+          backgroundColor: Palette.textPrimary,
           ...(glow
             ? {
                 shadowColor: Palette.accent,

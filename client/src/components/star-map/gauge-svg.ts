@@ -6,9 +6,11 @@
 
 // --- Color tiers ------------------------------------------------------------
 // 0–40 poor (red) · 41–70 moderate (amber) · 71–100 great (green).
-const POOR = '#D64545';
-const MODERATE = '#E0A82E';
-const GREAT = '#2E9E5B';
+import { Palette } from '@/constants/tokens';
+
+const POOR = Palette.accentRed;
+const MODERATE = Palette.accentAmber;
+const GREAT = Palette.accentGreen;
 
 export function scoreColor(score: number): string {
   if (score <= 40) return POOR;

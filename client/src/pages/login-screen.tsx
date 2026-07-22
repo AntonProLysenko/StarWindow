@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
 import { router } from 'expo-router';
-import { SymbolView } from 'expo-symbols';
 import {
   View,
   Text,
@@ -12,9 +11,10 @@ import {
   Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Audio } from 'expo-av';
 import { ShootingStar } from '@/components/shooting-star';
+import { SoundToggle } from '@/components/sound-toggle';
 import { Palette, Radius } from '@/constants/tokens';
+import * as ambientSound from '@/utilities/ambient-sound-service';
 import * as usersService from '@/utilities/users-service';
 import { dvw, dvh } from '@/utilities/responsive-dimensions';
 
@@ -33,12 +33,7 @@ export default function LoginScreen() {
   const [screen, setScreen] = useState(getScreen());
   const signInGlow = useRef(new Animated.Value(0)).current;
   const newUserGlow = useRef(new Animated.Value(0)).current;
-  
-  
-  const soundRef = useRef<Audio.Sound | null>(null);
-  const [isMuted, setIsMuted] = useState(false);
-  const isMutedRef = useRef(false);
-  
+
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -47,21 +42,7 @@ export default function LoginScreen() {
   }, []);
 
   useEffect(() => {
-    const loadSound = async () => {
-      try {
-        const { sound } = await Audio.Sound.createAsync(
-          require('@/assets/sounds/space.mp3'),
-          { shouldPlay: true, volume: isMutedRef.current ? 0 : 0.4, isLooping: true, isMuted: isMutedRef.current }
-        );
-        soundRef.current = sound;
-      } catch (e) {
-        console.log('Sound error:', e);
-      }
-    };
-    loadSound();
-    return () => {
-      soundRef.current?.unloadAsync();
-    };
+    ambientSound.ensureAmbientSound();
   }, []);
 
   useEffect(() => {
@@ -78,21 +59,6 @@ export default function LoginScreen() {
   const titleSize = isShort ? 50 : isSmall ? 52 : isMedium ? 52 : 58;
   const inputPad = isShort ? 8 : isSmall ? 10 : 12;
   const cardPad = isShort ? 12 : isSmall ? 14 : 18;
-
-  const handleToggleSound = async () => {
-    const next = !isMutedRef.current;
-    isMutedRef.current = next;
-    setIsMuted(next);
-
-    try {
-      await soundRef.current?.setStatusAsync({
-        isMuted: next,
-        volume: next ? 0 : 0.4,
-      });
-    } catch (e) {
-      console.log('Sound toggle error:', e);
-    }
-  };
 
   const handleSignInPressIn = () => {
     Animated.timing(signInGlow, { toValue: 1, duration: 150, useNativeDriver: false }).start();
@@ -130,7 +96,7 @@ export default function LoginScreen() {
 
   const signInBorderColor = signInGlow.interpolate({
     inputRange: [0, 1],
-    outputRange: [Palette.accent, Palette.white],
+    outputRange: [Palette.accent, Palette.textPrimary],
   });
   const newUserBorderColor = newUserGlow.interpolate({
     inputRange: [0, 1],
@@ -148,7 +114,7 @@ export default function LoginScreen() {
             width: star.size,
             height: star.size,
             borderRadius: star.size,
-            backgroundColor: Palette.white,
+            backgroundColor: Palette.textPrimary,
             opacity: star.opacity,
           }} />
         ))}
@@ -158,17 +124,7 @@ export default function LoginScreen() {
         <ShootingStar key={i} delay={delay} />
       ))}
 
-      <TouchableOpacity style={styles.soundButton} onPress={handleToggleSound} activeOpacity={0.8}>
-        <SymbolView
-          name={{
-            ios: isMuted ? 'speaker.slash.fill' : 'speaker.wave.2.fill',
-            android: isMuted ? 'volume_off' : 'volume_up',
-            web: isMuted ? 'volume_off' : 'volume_up',
-          }}
-          size={18}
-          tintColor={Palette.accent}
-        />
-      </TouchableOpacity>
+      <SoundToggle floating />
 
       <View style={styles.inner}>
         <View style={styles.centerWrapper}>
@@ -190,7 +146,7 @@ export default function LoginScreen() {
             <TextInput
               style={[styles.input, { padding: inputPad }]}
               placeholder="Email"
-              placeholderTextColor="#2a4055"
+              placeholderTextColor={Palette.textTertiary}
               value={email}
               onChangeText={(value) => {
                 setEmail(value);
@@ -204,7 +160,7 @@ export default function LoginScreen() {
             <TextInput
               style={[styles.input, { padding: inputPad }]}
               placeholder="Password"
-              placeholderTextColor="#2a4055"
+              placeholderTextColor={Palette.textTertiary}
               value={password}
               onChangeText={(value) => {
                 setPassword(value);
@@ -265,27 +221,13 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Palette.background,
+    backgroundColor: Palette.bgVoid,
     overflow: 'hidden',
   },
   starField: {
     position: 'absolute',
     width: '100%',
     height: '100%',
-  },
-  soundButton: {
-    position: 'absolute',
-    top: 18,
-    right: 18,
-    zIndex: 10,
-    borderWidth: 1,
-    borderColor: Palette.cardBorder,
-    borderRadius: Radius.sm,
-    backgroundColor: Palette.cardBackground,
-    width: 38,
-    height: 38,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   inner: {
     flex: 1,
@@ -305,7 +247,7 @@ const styles = StyleSheet.create({
   },
   appName: {
     fontWeight: '900',
-    color: Palette.white,
+    color: Palette.textPrimary,
     letterSpacing: 4,
     marginBottom: 4,
     textShadowColor: Palette.accent,
@@ -314,28 +256,28 @@ const styles = StyleSheet.create({
   },
   tagline: {
     fontSize: 13,
-    color: Palette.tagline,
+    color: Palette.textMuted,
     marginBottom: 10,
     letterSpacing: 1.5,
     textAlign: 'center',
   },
   card: {
     width: '120%',
-    backgroundColor: Palette.cardBackground,
+    backgroundColor: Palette.bgDeep,
     borderRadius: Radius.lg,
     borderWidth: 1,
-    borderColor: Palette.cardBorder,
+    borderColor: Palette.borderSoft,
     shadowColor: Palette.accent,
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.1,
     shadowRadius: 24,
   },
   input: {
-    backgroundColor: Palette.inputBackground,
+    backgroundColor: Palette.surface,
     borderWidth: 1,
-    borderColor: Palette.inputBorder,
+    borderColor: Palette.border,
     borderRadius: Radius.sm,
-    color: Palette.inputText,
+    color: Palette.textSecondary,
     fontSize: 13,
     marginBottom: 8,
   },
@@ -349,7 +291,7 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   signInButton: {
-    backgroundColor: Palette.signInBackground,
+    backgroundColor: Palette.surfaceRaised,
     borderRadius: Radius.sm,
     padding: 10,
     alignItems: 'center',
@@ -370,7 +312,7 @@ const styles = StyleSheet.create({
     letterSpacing: 4,
   },
   errorText: {
-    color: '#ff9a9a',
+    color: Palette.accentRed,
     fontSize: 11,
     marginBottom: 12,
     textAlign: 'center',
@@ -383,10 +325,10 @@ const styles = StyleSheet.create({
   dividerLine: {
     flex: 1,
     height: dvh(1),
-    backgroundColor: Palette.divider,
+    backgroundColor: Palette.border,
   },
   dividerText: {
-    color: Palette.dividerText,
+    color: Palette.textMuted,
     marginHorizontal: 10,
     fontSize: 10,
   },
@@ -398,12 +340,12 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
   },
   newUserText: {
-    color: Palette.newUserText,
+    color: Palette.accentMuted,
     fontSize: 12,
     letterSpacing: 1,
   },
   footer: {
-    color: Palette.divider,
+    color: Palette.border,
     fontSize: 14,
     marginTop: 10,
     letterSpacing: 8,

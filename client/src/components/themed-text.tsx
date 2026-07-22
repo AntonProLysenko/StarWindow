@@ -1,28 +1,30 @@
-import { Platform, StyleSheet, Text, type TextProps } from 'react-native';
+import { StyleSheet, Text, type TextProps } from 'react-native';
 
-import { Fonts, ThemeColor } from '@/constants/theme';
-import { useTheme } from '@/hooks/use-theme';
+import { Palette } from '@/constants/tokens';
+
+/** Text colors screens may pick via the `themeColor` prop. */
+const textColors = {
+  textPrimary: Palette.textPrimary,
+  textSecondary: Palette.textSecondary,
+  textMuted: Palette.textMuted,
+  accent: Palette.accent,
+} as const;
 
 export type ThemedTextProps = TextProps & {
-  type?: 'default' | 'title' | 'small' | 'smallBold' | 'subtitle' | 'link' | 'linkPrimary' | 'code';
-  themeColor?: ThemeColor;
+  type?: 'default' | 'title' | 'subtitle' | 'small' | 'smallBold';
+  themeColor?: keyof typeof textColors;
 };
 
-export function ThemedText({ style, type = 'default', themeColor, ...rest }: ThemedTextProps) {
-  const theme = useTheme();
-
+export function ThemedText({ style, type = 'default', themeColor = 'textPrimary', ...rest }: ThemedTextProps) {
   return (
     <Text
       style={[
-        { color: theme[themeColor ?? 'text'] },
+        { color: textColors[themeColor] },
         type === 'default' && styles.default,
         type === 'title' && styles.title,
+        type === 'subtitle' && styles.subtitle,
         type === 'small' && styles.small,
         type === 'smallBold' && styles.smallBold,
-        type === 'subtitle' && styles.subtitle,
-        type === 'link' && styles.link,
-        type === 'linkPrimary' && styles.linkPrimary,
-        type === 'code' && styles.code,
         style,
       ]}
       {...rest}
@@ -55,19 +57,5 @@ const styles = StyleSheet.create({
     fontSize: 32,
     lineHeight: 44,
     fontWeight: 600,
-  },
-  link: {
-    lineHeight: 30,
-    fontSize: 14,
-  },
-  linkPrimary: {
-    lineHeight: 30,
-    fontSize: 14,
-    color: '#3c87f7',
-  },
-  code: {
-    fontFamily: Fonts.mono,
-    fontWeight: Platform.select({ android: 700 }) ?? 500,
-    fontSize: 12,
   },
 });

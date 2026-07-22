@@ -184,7 +184,7 @@ export default function SignUpScreen() {
 
   const signInBorderColor = signInGlow.interpolate({
     inputRange: [0, 1],
-    outputRange: [Palette.accent, Palette.white],
+    outputRange: [Palette.accent, Palette.textPrimary],
   });
   const newUserBorderColor = newUserGlow.interpolate({
     inputRange: [0, 1],
@@ -202,7 +202,7 @@ export default function SignUpScreen() {
             width: star.size,
             height: star.size,
             borderRadius: star.size,
-            backgroundColor: Palette.white,
+            backgroundColor: Palette.textPrimary,
             opacity: star.opacity,
           }} />
         ))}
@@ -294,7 +294,7 @@ export default function SignUpScreen() {
                 <TextInput
                   style={[styles.input, { padding: inputPad }]}
                   placeholder="First Name"
-                  placeholderTextColor="#2a4055"
+                  placeholderTextColor={Palette.textTertiary}
                   value={firstName}
                   onChangeText={(value) => {
                     setFirstName(value);
@@ -306,7 +306,7 @@ export default function SignUpScreen() {
                 <TextInput
                   style={[styles.input, { padding: inputPad }]}
                   placeholder="Last Name"
-                  placeholderTextColor="#2a4055"
+                  placeholderTextColor={Palette.textTertiary}
                   value={lastName}
                   onChangeText={(value) => {
                     setLastName(value);
@@ -318,7 +318,7 @@ export default function SignUpScreen() {
                 <TextInput
                   style={[styles.input, { padding: inputPad }]}
                   placeholder="Email"
-                  placeholderTextColor="#2a4055"
+                  placeholderTextColor={Palette.textTertiary}
                   value={email}
                   onChangeText={(value) => {
                     setEmail(value);
@@ -332,7 +332,7 @@ export default function SignUpScreen() {
                 <TextInput
                   style={[styles.input, { padding: inputPad }]}
                   placeholder="Password"
-                  placeholderTextColor="#2a4055"
+                  placeholderTextColor={Palette.textTertiary}
                   value={password}
                   onChangeText={(value) => {
                     setPassword(value);
@@ -344,7 +344,7 @@ export default function SignUpScreen() {
                 <TextInput
                   style={[styles.input, { padding: inputPad }]}
                   placeholder="Repeat Password"
-                  placeholderTextColor="#2a4055"
+                  placeholderTextColor={Palette.textTertiary}
                   value={confirm}
                   onChangeText={(value) => {
                     setConfirm(value);
@@ -405,7 +405,7 @@ export default function SignUpScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Palette.background,
+    backgroundColor: Palette.bgVoid,
     overflow: 'hidden',
   },
   starField: {
@@ -419,9 +419,9 @@ const styles = StyleSheet.create({
     right: 18,
     zIndex: 10,
     borderWidth: 1,
-    borderColor: Palette.cardBorder,
+    borderColor: Palette.borderSoft,
     borderRadius: Radius.sm,
-    backgroundColor: Palette.cardBackground,
+    backgroundColor: Palette.bgDeep,
     width: 38,
     height: 38,
     alignItems: 'center',
@@ -445,7 +445,7 @@ const styles = StyleSheet.create({
   },
   appName: {
     fontWeight: '900',
-    color: Palette.white,
+    color: Palette.textPrimary,
     letterSpacing: 4,
     marginBottom: 4,
     textShadowColor: Palette.accent,
@@ -454,47 +454,47 @@ const styles = StyleSheet.create({
   },
   tagline: {
     fontSize: 10,
-    color: Palette.tagline,
+    color: Palette.textMuted,
     marginBottom: 10,
     letterSpacing: 1.5,
     textAlign: 'center',
   },
   card: {
     width: '100%',
-    backgroundColor: Palette.cardBackground,
+    backgroundColor: Palette.bgDeep,
     borderRadius: Radius.lg,
     borderWidth: 1,
-    borderColor: Palette.cardBorder,
+    borderColor: Palette.borderSoft,
     shadowColor: Palette.accent,
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.1,
     shadowRadius: 24,
   },
   input: {
-    backgroundColor: Palette.inputBackground,
+    backgroundColor: Palette.surface,
     borderWidth: 1,
-    borderColor: Palette.inputBorder,
+    borderColor: Palette.border,
     borderRadius: Radius.sm,
-    color: Palette.inputText,
+    color: Palette.textSecondary,
     fontSize: 13,
     marginBottom: 8,
   },
   stepTitle: {
-    color: Palette.white,
+    color: Palette.textPrimary,
     fontSize: 18,
     fontWeight: '800',
     marginBottom: 8,
     textAlign: 'center',
   },
   stepCopy: {
-    color: Palette.dividerText,
+    color: Palette.textMuted,
     fontSize: 12,
     lineHeight: 18,
     marginBottom: 16,
     textAlign: 'center',
   },
   loadingText: {
-    color: Palette.dividerText,
+    color: Palette.textMuted,
     fontSize: 12,
     marginBottom: 16,
     textAlign: 'center',
@@ -506,9 +506,9 @@ const styles = StyleSheet.create({
   },
   eventTypeOption: {
     borderWidth: 1,
-    borderColor: Palette.inputBorder,
+    borderColor: Palette.border,
     borderRadius: Radius.sm,
-    backgroundColor: Palette.inputBackground,
+    backgroundColor: Palette.surface,
     paddingHorizontal: 12,
     paddingVertical: 10,
     marginRight: 8,
@@ -516,10 +516,10 @@ const styles = StyleSheet.create({
   },
   eventTypeOptionSelected: {
     borderColor: Palette.accent,
-    backgroundColor: Palette.signInBackground,
+    backgroundColor: Palette.surfaceRaised,
   },
   eventTypeText: {
-    color: Palette.dividerText,
+    color: Palette.textMuted,
     fontSize: 12,
   },
   eventTypeTextSelected: {
@@ -527,7 +527,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   signInButton: {
-    backgroundColor: Palette.signInBackground,
+    backgroundColor: Palette.surfaceRaised,
     borderRadius: Radius.sm,
     padding: 10,
     alignItems: 'center',
@@ -548,7 +548,7 @@ const styles = StyleSheet.create({
     letterSpacing: 4,
   },
   errorText: {
-    color: '#ff9a9a',
+    color: Palette.accentRed,
     fontSize: 11,
     marginBottom: 12,
     textAlign: 'center',
@@ -561,10 +561,10 @@ const styles = StyleSheet.create({
   dividerLine: {
     flex: 1,
     height: dvh(1),
-    backgroundColor: Palette.divider,
+    backgroundColor: Palette.border,
   },
   dividerText: {
-    color: Palette.dividerText,
+    color: Palette.textMuted,
     marginHorizontal: 10,
     fontSize: 10,
   },
@@ -576,12 +576,12 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
   },
   newUserText: {
-    color: Palette.newUserText,
+    color: Palette.accentMuted,
     fontSize: 12,
     letterSpacing: 1,
   },
   footer: {
-    color: Palette.divider,
+    color: Palette.border,
     fontSize: 14,
     marginTop: 10,
     letterSpacing: 8,

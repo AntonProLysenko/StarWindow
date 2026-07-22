@@ -98,7 +98,7 @@ export default function ProfileScreen() {
               width: star.size,
               height: star.size,
               borderRadius: star.size,
-              backgroundColor: Palette.white,
+              backgroundColor: Palette.textPrimary,
               opacity: star.opacity,
             }}
           />
@@ -288,7 +288,7 @@ function EditProfile({
         <Text style={styles.panelEyebrow}>ACCOUNT DETAILS</Text>
         {isLoading ? (
           <View style={styles.loadingRow}>
-            <ActivityIndicator color={Palette.accentMoon} />
+            <ActivityIndicator color={Palette.accent} />
             <Text style={styles.loadingText}>Loading profile...</Text>
           </View>
         ) : (
@@ -333,7 +333,7 @@ function EditProfile({
         <Text style={styles.panelCopy}>Choose which sky events should shape your calendar and feed.</Text>
         {isLoading ? (
           <View style={styles.loadingRow}>
-            <ActivityIndicator color={Palette.accentMoon} />
+            <ActivityIndicator color={Palette.accent} />
             <Text style={styles.loadingText}>Loading preferences...</Text>
           </View>
         ) : (
@@ -460,7 +460,7 @@ function MySavedEvents({ user }: { user: usersService.AuthUser | null }) {
             <Text style={styles.errorText}>Log in to see your saved events.</Text>
           ) : isLoading ? (
             <View style={styles.loadingRow}>
-              <ActivityIndicator color={Palette.accentMoon} />
+              <ActivityIndicator color={Palette.accent} />
               <Text style={styles.loadingText}>Loading saved events...</Text>
             </View>
           ) : error ? (
@@ -518,7 +518,7 @@ function ProfileField({
         style={styles.input}
         value={value}
         onChangeText={onChangeText}
-        placeholderTextColor={Palette.placeholder}
+        placeholderTextColor={Palette.textTertiary}
         autoCapitalize={autoCapitalize}
         keyboardType={keyboardType}
         autoCorrect={false}
@@ -561,7 +561,7 @@ const styles = StyleSheet.create({
     backgroundColor: Palette.bgDeep,
     borderWidth: 1,
     borderColor: Palette.borderSoft,
-    borderRadius: Radius.xl,
+    borderRadius: Radius.lg,
     padding: 20,
   },
   avatar: {
@@ -572,10 +572,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: Palette.surfaceRaised,
     borderWidth: 1,
-    borderColor: Palette.accentMoon,
+    borderColor: Palette.accent,
   },
   avatarText: {
-    color: Palette.white,
+    color: Palette.textPrimary,
     fontSize: 24,
     fontWeight: '900',
   },
@@ -584,7 +584,7 @@ const styles = StyleSheet.create({
     minWidth: dvw(0),
   },
   eyebrow: {
-    color: Palette.accentMoonDim,
+    color: Palette.accentMuted,
     fontSize: 13,
     fontWeight: '800',
     letterSpacing: 0,
@@ -615,7 +615,7 @@ const styles = StyleSheet.create({
   },
   levelFill: {
     height: '100%',
-    backgroundColor: Palette.accentMoon,
+    backgroundColor: Palette.accent,
   },
   levelMeta: {
     color: Palette.textTertiary,
@@ -629,7 +629,7 @@ const styles = StyleSheet.create({
     backgroundColor: Palette.bgDeep,
     borderWidth: 1,
     borderColor: Palette.borderSoft,
-    borderRadius: Radius.xl,
+    borderRadius: Radius.lg,
     padding: 8,
   },
   tabButton: {
@@ -642,8 +642,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   tabButtonSelected: {
-    borderColor: Palette.accentMoon,
-    backgroundColor: Palette.accentMoon + '1A',
+    borderColor: Palette.accent,
+    backgroundColor: Palette.accent + '1A',
   },
   tabButtonText: {
     color: Palette.textSecondary,
@@ -651,7 +651,7 @@ const styles = StyleSheet.create({
     fontWeight: '900',
   },
   tabButtonTextSelected: {
-    color: Palette.accentMoon,
+    color: Palette.accent,
   },
   grid: {
     flexDirection: 'row',
@@ -664,7 +664,7 @@ const styles = StyleSheet.create({
     backgroundColor: Palette.bgDeep,
     borderWidth: 1,
     borderColor: Palette.borderSoft,
-    borderRadius: Radius.xl,
+    borderRadius: Radius.lg,
     padding: 20,
     gap: 14,
   },
@@ -672,7 +672,7 @@ const styles = StyleSheet.create({
     flexBasis: '100%',
   },
   panelEyebrow: {
-    color: Palette.accentMoonDim,
+    color: Palette.accentMuted,
     fontSize: 13,
     fontWeight: '800',
     letterSpacing: 0,
@@ -703,9 +703,9 @@ const styles = StyleSheet.create({
   input: {
     minHeight: dvh(46),
     borderWidth: 1,
-    borderColor: Palette.inputBorder,
+    borderColor: Palette.border,
     borderRadius: Radius.sm,
-    backgroundColor: Palette.inputBackground,
+    backgroundColor: Palette.surface,
     color: Palette.textPrimary,
     paddingHorizontal: 14,
     fontSize: 15,
@@ -720,7 +720,7 @@ const styles = StyleSheet.create({
   primaryButton: {
     minHeight: dvh(44),
     borderRadius: Radius.md,
-    backgroundColor: Palette.accentMoon,
+    backgroundColor: Palette.accent,
     paddingHorizontal: 18,
     alignItems: 'center',
     justifyContent: 'center',
@@ -771,8 +771,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   preferencePillSelected: {
-    borderColor: Palette.accentMoon,
-    backgroundColor: Palette.accentMoon + '20',
+    borderColor: Palette.accent,
+    backgroundColor: Palette.accent + '20',
   },
   preferenceText: {
     color: Palette.textSecondary,
@@ -780,7 +780,7 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   preferenceTextSelected: {
-    color: Palette.accentMoon,
+    color: Palette.accent,
   },
   savedEventsList: {
     gap: 12,

@@ -1,3 +1,12 @@
+/*
+ * Web-only globals. Fonts here are consumed via var(--font-*) by
+ * `constants/tokens.ts` (Fonts.web) and the *.module.css web chrome.
+ *
+ * Colors are NOT defined here — the single source of truth for the palette is
+ * `src/constants/tokens.ts`. If the NativeWind migration ever lands, the
+ * palette moves here as CSS variables.
+ */
+
 :root {
   --font-display:
     Spline Sans, Inter, ui-sans-serif, system-ui, sans-serif, Apple Color Emoji, Segoe UI Emoji,
@@ -6,32 +15,4 @@
     ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, Courier New, monospace;
   --font-rounded: 'SF Pro Rounded', 'Hiragino Maru Gothic ProN', Meiryo, 'MS PGothic', sans-serif;
   --font-serif: Georgia, 'Times New Roman', serif;
-
-  /* ===== StarWindow color scheme — matches client/src/constants/tokens.ts ===== */
-
-  /* backgrounds */
-  --color-bg-void: #000008;          /* page background, near-black (was Palette.background) */
-  --color-bg-deep: #01030a;          /* slightly raised background (was Palette.cardBackground) */
-  --color-surface: #020810;          /* cards, panels (was Palette.inputBackground) */
-  --color-surface-raised: #00111f;   /* hover / active surface (was Palette.signInBackground) */
-
-  /* borders */
-  --color-border: #0d1e30;           /* visible borders (was Palette.inputBorder) */
-  --color-border-soft: #0a1828;      /* subtle dividers (was Palette.cardBorder) */
-
-  /* text */
-  --color-text-primary: #ffffff;     /* main text, headings (was Palette.white) */
-  --color-text-secondary: #aabbcc;   /* secondary text, labels (was Palette.inputText) */
-  --color-text-tertiary: #2a4055;    /* faint text, placeholders (was Palette.placeholder) */
-
-  /* accent — the glowing cyan from the logo and Sign In button */
-  --color-accent-moon: #00d4ff;      /* main glow color — buttons, links, highlights (was Palette.accent) */
-  --color-accent-moon-dim: #0387a2;  /* darker cyan, for borders/backgrounds (was Palette.accentMuted) */
-  --color-accent-glow: #66e5ff;      /* brightest cyan, for glow/shadow effects */
-
-  /* supporting accents — no login equivalent, kept distinct for status badges */
-  --color-accent-blue: #5B9FFF;      /* secondary accent */
-  --color-accent-green: #4ADEC4;     /* success / positive status */
-  --color-accent-red: #FF6B5B;       /* error / countdown / urgent */
 }
-

@@ -2,7 +2,7 @@ import React, { memo, useMemo } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { getEventIconByType } from '@/lib/event-icons';
-import { Spacing } from '@/constants/theme';
+import { Palette, Radius, Spacing, alpha } from '@/constants/tokens';
 import { dvw, dvh } from '@/utilities/responsive-dimensions';
 
 export type CalendarEvent = {
@@ -161,7 +161,7 @@ export const MonthGrid = memo(MonthGridComponent);
 
 const styles = StyleSheet.create({
   calendarCard: {
-    backgroundColor: 'rgb(11, 18, 38)',
+    backgroundColor: Palette.bgDeep,
     gap: 0,
     width: '100%',
   },
@@ -191,8 +191,8 @@ const styles = StyleSheet.create({
     width: '100%',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    backgroundColor: 'rgba(22, 32, 61, 0.72)',
-    borderRadius: Spacing.three,
+    backgroundColor: alpha(Palette.surfaceRaised, 0.72),
+    borderRadius: Radius.md,
     paddingHorizontal: 10,
     paddingVertical: 10,
     position: 'relative',
@@ -213,12 +213,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   dayCellSelected: {
-    backgroundColor: 'rgba(58, 134, 255, 0.35)',
+    backgroundColor: alpha(Palette.accent, 0.18),
     borderWidth: 1,
-    borderColor: 'rgba(58, 134, 255, 0.55)',
+    borderColor: alpha(Palette.accent, 0.5),
   },
   dayCellDisabled: {
-    backgroundColor: 'rgba(15, 20, 32, 0.35)',
+    backgroundColor: alpha(Palette.bgDeep, 0.35),
     opacity: 1,
   },
   dayNumberContainer: {
@@ -233,7 +233,7 @@ const styles = StyleSheet.create({
     minHeight: dvh(0),
   },
   dayCellText: {
-    color: '#B0B4BA',
+    color: Palette.textSecondary,
   },
   dayCellTextCompact: {
     fontSize: 9,
@@ -242,7 +242,7 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   dayHeaderText: {
-    color: '#A7C4FF',
+    color: Palette.accentMuted,
     fontWeight: '600',
   },
   dayHeaderTextCompact: {
@@ -250,20 +250,20 @@ const styles = StyleSheet.create({
     lineHeight: 11,
   },
   dayCellSelectedText: {
-    color: '#FFFFFF',
+    color: Palette.textPrimary,
     fontWeight: '600',
   },
   dayCellDisabledText: {
-    color: '#6B7280',
+    color: Palette.textMuted,
   },
   eventIconsContainer: {
     position: 'absolute',
-    bottom: Spacing.one,
+    bottom: Spacing.xs,
     left: 0,
     right: 0,
     justifyContent: 'center',
     flexDirection: 'row',
-    gap: Spacing.half,
+    gap: Spacing.xxs,
   },
   eventIconsContainerCompact: {
     bottom: 1,
@@ -271,7 +271,7 @@ const styles = StyleSheet.create({
   eventIconBox: {
     width: 20,
     height: 20,
-    backgroundColor: '#3A86FF',
+    backgroundColor: Palette.accentBlue,
     borderRadius: 3,
     justifyContent: 'center',
     alignItems: 'center',
@@ -282,7 +282,7 @@ const styles = StyleSheet.create({
     borderRadius: 2,
   },
   eventIcon: {
-    color: '#FFFFFF',
+    color: Palette.textPrimary,
     fontSize: 11,
     fontWeight: 'bold',
   },

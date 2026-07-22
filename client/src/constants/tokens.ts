@@ -1,76 +1,113 @@
 /**
- * Design tokens for the StarWindow UI.
+ * Design tokens for the StarWindow UI — the single source of truth for colors,
+ * spacing, radii, and fonts. Referenced from `StyleSheet.create` so the same
+ * values work on native (iOS/Android) and web.
  *
- * These are the cross-platform equivalent of CSS variables: a single source of
- * truth for the palette and shape values, referenced from `StyleSheet.create`
- * so the same values work on native (iOS/Android) and web.
- *
- * UPDATED: merged in the semantic tokens dashboard.tsx needs (background
- * levels, text hierarchy, status colors) so every screen pulls from one
- * source instead of dashboard maintaining its own local `colors` object.
- * Values below are mapped onto the *existing* login palette, not the old
- * dashboard hex codes — this is now the single source of truth.
+ * Rules (see context/CODING_STANDARDS.md):
+ * - No hardcoded hex/spacing/radius values in components — add a token first.
+ * - `client/src/global.css` mirrors the palette for web-only CSS; keep in sync.
  */
 
+import '@/global.css';
+
+import { Platform } from 'react-native';
+
 export const Palette = {
-  /** Deep space background */
-  background: '#000008',
-  /** Brand cyan accent / glow */
+  /** Backgrounds, darkest → lightest */
+  bgVoid: '#000008',
+  bgDeep: '#01030a',
+  surface: '#020810',
+  surfaceRaised: '#00111f',
+
+  /** Borders: `border` is visible, `borderSoft` is a subtle divider */
+  border: '#0d1e30',
+  borderSoft: '#0a1828',
+
+  /** Text hierarchy, brightest → faintest */
+  textPrimary: '#ffffff',
+  textSecondary: '#aabbcc',
+  textMuted: '#677d92',
+  textTertiary: '#2a4055',
+
+  /** Brand cyan accent (logo glow) */
   accent: '#00d4ff',
-  /** Subtle accent used as the new-user button's resting border */
   accentMuted: '#0387a2',
-  white: '#ffffff',
+  accentGlow: '#66e5ff',
 
-  cardBackground: '#01030a',
-  cardBorder: '#0a1828',
-
-  inputBackground: '#020810',
-  inputBorder: '#0d1e30',
-  inputText: '#aabbcc',
-  placeholder: '#2a4055',
-
-  signInBackground: '#00111f',
-
-  newUserText: '#0387a2',
-
-  tagline: '#677d92',
-  divider: '#1b314f',
-  dividerText: '#5c7c9d',
-
-  // ---- added for dashboard.tsx (mapped onto the palette above) ----
-
-  /** 4 background levels, darkest to lightest — reuses existing dark tones */
-  bgVoid: '#000008',          // was background
-  bgDeep: '#01030a',          // was cardBackground
-  surface: '#020810',         // was inputBackground
-  surfaceRaised: '#00111f',   // was signInBackground
-
-  /** borders, visible -> subtle */
-  border: '#0d1e30',          // was inputBorder
-  borderSoft: '#0a1828',      // was cardBorder
-
-  /** text hierarchy */
-  textPrimary: '#ffffff',     // was white
-  textSecondary: '#aabbcc',   // was inputText
-  textTertiary: '#2a4055',    // was placeholder
-
-  /** moon/glow accents, recolored from teal (#3DD9E8) onto brand cyan (#00d4ff) */
-  accentMoon: '#00d4ff',      // was accent
-  accentMoonDim: '#0387a2',   // was accentMuted
-  accentGlow: '#66e5ff',      // brighter tint of accent, for shadows/glow
-
-  /** status colors — no login equivalent existed, kept distinct from accent */
+  /** Status / secondary accents */
   accentBlue: '#5B9FFF',
   accentGreen: '#4ADEC4',
+  accentAmber: '#E0A82E',
   accentRed: '#FF6B5B',
+
+  /** Moon-phase graphic (dashboard hero fallback) */
+  moonLit: '#E7ECF2',
+  moonShadow: '#29445E',
+
+  /** Shadows are pure black regardless of theme */
+  shadow: '#000000',
+
+  /** Must match `expo-splash-screen` backgroundColor in client/app.json */
+  splashBackground: '#208AEF',
 } as const;
+
+/**
+ * A Palette hex token at reduced opacity, as an `rgba()` string — for
+ * translucent overlays/selections. Keeps components off raw rgba literals.
+ */
+export function alpha(hex: string, opacity: number): string {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `rgba(${r}, ${g}, ${b}, ${opacity})`;
+}
 
 export const Radius = {
   sm: 10,
-  lg: 20,
-
-  // added for dashboard.tsx
   md: 14,
-  xl: 20,
+  lg: 20,
   pill: 100,
 } as const;
+
+export const Spacing = {
+  xxs: 2,
+  xs: 4,
+  sm: 8,
+  md: 16,
+  lg: 24,
+  xl: 32,
+  xxl: 44,
+  xxxl: 64,
+} as const;
+
+/** Width breakpoints for responsive layout (useWindowDimensions().width). */
+export const Breakpoints = {
+  /** Below this: phone layout (sidebar collapses, single column). */
+  tablet: 768,
+  /** At or above this: full desktop layout. */
+  desktop: 1024,
+} as const;
+
+export const Fonts = Platform.select({
+  ios: {
+    sans: 'system-ui',
+    serif: 'ui-serif',
+    rounded: 'ui-rounded',
+    mono: 'ui-monospace',
+  },
+  default: {
+    sans: 'normal',
+    serif: 'serif',
+    rounded: 'normal',
+    mono: 'monospace',
+  },
+  web: {
+    sans: 'var(--font-display)',
+    serif: 'var(--font-serif)',
+    rounded: 'var(--font-rounded)',
+    mono: 'var(--font-mono)',
+  },
+});
+
+/** Extra bottom inset so scroll content clears the native tab bar. */
+export const BottomTabInset = Platform.select({ ios: 50, android: 80 }) ?? 0;

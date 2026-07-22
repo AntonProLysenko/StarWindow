@@ -57,9 +57,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     alignSelf: 'flex-start',
     gap: 8,
-    backgroundColor: Palette.accentMoon + '14',
+    backgroundColor: Palette.accent + '14',
     borderWidth: 1,
-    borderColor: Palette.accentMoon + '40',
+    borderColor: Palette.accent + '40',
     borderRadius: 100,
     paddingVertical: 7,
     paddingHorizontal: 14,
@@ -77,7 +77,7 @@ const styles = StyleSheet.create({
   text: {
     fontSize: 13,
     fontWeight: '700',
-    color: Palette.accentMoon,
+    color: Palette.accent,
   },
   textPast: {
     color: Palette.textTertiary,

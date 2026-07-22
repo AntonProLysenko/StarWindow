@@ -6,8 +6,7 @@ import { MonthGrid } from '@/components/calendar/month-grid';
 import { ShootingStar } from '@/components/shooting-star';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Radius, Palette } from '@/constants/tokens';
-import { Spacing } from '@/constants/theme';
+import { Palette, Radius, Spacing } from '@/constants/tokens';
 import { useCalendarEvents } from '@/hooks/use-calendar-events';
 import { getEventIconByType } from '@/lib/event-icons';
 import { getCalendarEventsForDate, getCalendarEventsForMonth } from '@/utilities/events-api';
@@ -73,7 +72,7 @@ const CalendarBackdrop = memo(function CalendarBackdrop() {
               width: star.size,
               height: star.size,
               borderRadius: star.size,
-              backgroundColor: Palette.white,
+              backgroundColor: Palette.textPrimary,
               opacity: star.opacity,
             }}
           />
@@ -327,50 +326,50 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollViewContent: {
-    padding: Spacing.three,
-    gap: Spacing.one,
+    padding: Spacing.md,
+    gap: Spacing.xs,
     paddingTop: 60,
   },
   filterButtonsContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: Spacing.two,
-    paddingHorizontal: Spacing.two,
-    marginTop: Spacing.three,
+    gap: Spacing.sm,
+    paddingHorizontal: Spacing.sm,
+    marginTop: Spacing.md,
   },
   categoryPill: {
     backgroundColor: Palette.bgDeep,
     borderWidth: 1,
     borderColor: Palette.borderSoft,
-    paddingVertical: Spacing.two,
-    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.md,
     borderRadius: Radius.pill,
   },
   categoryText: {
-    color: Palette.accentMoon,
+    color: Palette.accent,
     fontWeight: '700',
     letterSpacing: 0.4,
   },
   calendarContainer: {
-    marginTop: Spacing.one,
-    paddingTop: Spacing.one,
+    marginTop: Spacing.xs,
+    paddingTop: Spacing.xs,
     backgroundColor: Palette.bgDeep,
     borderRadius: Radius.lg,
-    padding: Spacing.three,
+    padding: Spacing.md,
     borderWidth: 1,
     borderColor: Palette.borderSoft,
   },
   layoutHorizontal: {
     flexDirection: 'row',
-    gap: Spacing.four,
+    gap: Spacing.lg,
   },
   layoutVertical: {
     flexDirection: 'column',
-    gap: Spacing.four,
+    gap: Spacing.lg,
   },
   calendarSection: {
     backgroundColor: Palette.bgDeep,
-    gap: Spacing.three,
+    gap: Spacing.md,
     position: 'relative',
     zIndex: 1,
   },
@@ -378,37 +377,37 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: Spacing.one,
-    paddingBottom: Spacing.one,
+    marginBottom: Spacing.xs,
+    paddingBottom: Spacing.xs,
     borderBottomWidth: 2,
     borderBottomColor: Palette.borderSoft,
     backgroundColor: Palette.bgDeep,
-    borderRadius: Spacing.three,
-    padding: Spacing.two,
+    borderRadius: Radius.md,
+    padding: Spacing.sm,
   },
   monthHeaderContent: {
     flex: 1,
     justifyContent: 'center',
     position: 'absolute',
-    left: Spacing.two,
-    right: Spacing.two,
+    left: Spacing.sm,
+    right: Spacing.sm,
     alignItems: 'center',
   },
   monthTitle: {
     fontWeight: '400',
-    color: Palette.white,
+    color: Palette.textPrimary,
     letterSpacing: 1,
-    marginBottom: Spacing.two,
+    marginBottom: Spacing.sm,
     fontSize: 30,
-    paddingBottom: Spacing.one,
+    paddingBottom: Spacing.xs,
   },
   selectedDayPanel: {
     backgroundColor: Palette.bgDeep,
-    gap: Spacing.three,
+    gap: Spacing.md,
     borderRadius: Radius.md,
     borderColor: Palette.borderSoft,
     borderWidth: 1,
-    padding: Spacing.three,
+    padding: Spacing.md,
     position: 'relative',
     zIndex: 3,
   },
@@ -420,39 +419,39 @@ const styles = StyleSheet.create({
   selectedDayHeader: {
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    gap: Spacing.one,
+    gap: Spacing.xs,
     position: 'relative',
-    paddingTop: Spacing.one,
+    paddingTop: Spacing.xs,
   },
   selectedDateText: {
     fontWeight: '400',
     color: Palette.textPrimary,
     letterSpacing: 2,
-    marginTop: Spacing.three,
+    marginTop: Spacing.md,
     zIndex: 1,
   },
   eventCount: {
     color: Palette.textSecondary,
-    marginVertical: Spacing.two,
+    marginVertical: Spacing.sm,
   },
   eventListScroll: {
     flex: 1,
     minHeight: dvh(0),
   },
   eventList: {
-    gap: Spacing.two,
+    gap: Spacing.sm,
   },
   eventCard: {
     backgroundColor: Palette.border,
-    padding: Spacing.three,
+    padding: Spacing.md,
     borderRadius: Radius.md,
     flexDirection: 'row',
-    gap: Spacing.three,
+    gap: Spacing.md,
   },
   eventCardIconBox: {
     width: 40,
     height: 40,
-    backgroundColor: Palette.accentMoonDim,
+    backgroundColor: Palette.accentMuted,
     borderRadius: Radius.sm,
   },
   eventCardIcon: {
@@ -464,7 +463,7 @@ const styles = StyleSheet.create({
   },
   eventContent: {
     flex: 1,
-    gap: Spacing.one,
+    gap: Spacing.xs,
   },
   eventTitle: {
     color: Palette.textPrimary,
@@ -478,8 +477,8 @@ const styles = StyleSheet.create({
   noEventsContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: Spacing.six,
-    gap: Spacing.three,
+    paddingVertical: Spacing.xxxl,
+    gap: Spacing.md,
   },
   noEventsText: {
     color: Palette.textSecondary,
@@ -490,7 +489,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   locationNotice: {
-    paddingHorizontal: Spacing.two,
+    paddingHorizontal: Spacing.sm,
     lineHeight: 18,
   },
   pressed: {

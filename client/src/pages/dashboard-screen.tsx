@@ -2,10 +2,7 @@
 // StarWindow — Home Dashboard
 // Left rail with 4 tabs (Calendar, Map, Launches, Profile),
 // moon-phase hero, and preview cards for each tab.
-//
-// UPDATED: now imports Palette/Radius from @/constants/tokens (the same
-// source the login screen uses) instead of a local hardcoded `colors`
-// object, so the two screens share one color scheme.
+// All colors/spacing/radii come from @/constants/tokens.
 
 import React, { useEffect, useState } from 'react';
 import {
@@ -20,8 +17,9 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import * as Location from 'expo-location';
-import { Palette, Radius } from '@/constants/tokens';
+import { Palette, Radius, Spacing, alpha } from '@/constants/tokens';
 import { ShootingStar } from '@/components/shooting-star';
+import { SoundToggle } from '@/components/sound-toggle';
 import { MonthGrid } from '@/components/calendar/month-grid';
 import { StarMap } from '@/components/star-map';
 import { useCalendarEvents } from '@/hooks/use-calendar-events';
@@ -43,6 +41,7 @@ import { fetchViewingScore } from '@/utilities/viewing-score-api';
 import { fetchCurrentWeather, type WeatherResponse } from '@/utilities/weather-api';
 import { getUserLevelProgressLabel, getUserLevelProgressPercent } from '@/utilities/level-progress';
 import { getOrRequestUserLocation } from '@/utilities/user-location-service';
+import * as ambientSound from '@/utilities/ambient-sound-service';
 import * as usersService from '@/utilities/users-service';
 import { dvw, dvh } from '@/utilities/responsive-dimensions';
 
@@ -52,15 +51,6 @@ const STARS = Array.from({ length: 150 }, (_, i) => ({
   size: (i % 4) + 0.5,
   opacity: (i % 6) * 0.08 + 0.15,
 }));
-
-const spacing = {
-  xs: 4,
-  sm: 8,
-  md: 16,
-  lg: 24,
-  xl: 32,
-  xxl: 44,
-};
 
 const LOCATION_REQUIRED_LABEL = 'Location required';
 const LOCATION_SETTINGS_MESSAGE = 'Enable browser location access in site settings to load your sky data.';
@@ -567,6 +557,10 @@ export default function DashboardScreen({ locked = false }: DashboardScreenProps
   const [newsError, setNewsError] = useState<string | null>(null);
 
   useEffect(() => {
+    ambientSound.ensureAmbientSound();
+  }, []);
+
+  useEffect(() => {
     let isMounted = true;
 
     usersService.getCurrentUser()
@@ -848,7 +842,7 @@ export default function DashboardScreen({ locked = false }: DashboardScreenProps
             width: star.size,
             height: star.size,
             borderRadius: star.size,
-            backgroundColor: Palette.white,
+            backgroundColor: Palette.textPrimary,
             opacity: star.opacity,
           }} />
         ))}
@@ -885,10 +879,14 @@ export default function DashboardScreen({ locked = false }: DashboardScreenProps
                 <Pressable style={styles.topCreateButton} onPress={() => router.push('/signup' as any)}>
                   <Text style={styles.topCreateText}>CREATE ACCOUNT</Text>
                 </Pressable>
+                <SoundToggle />
               </View>
             ) : (
-              <View style={styles.locationChip}>
-                <Text style={styles.locationChipText}>📍 {locationLabel}</Text>
+              <View style={styles.guestTopActions}>
+                <View style={styles.locationChip}>
+                  <Text style={styles.locationChipText}>📍 {locationLabel}</Text>
+                </View>
+                <SoundToggle />
               </View>
             )}
           </View>
@@ -1015,7 +1013,7 @@ export default function DashboardScreen({ locked = false }: DashboardScreenProps
             <PreviewCard
               eyebrow="LAUNCHES"
               badge={isLaunchLoading ? 'LOADING' : launchError ? 'UNAVAILABLE' : formatLaunchBadge(nextLaunch)}
-              badgeColor={Palette.accentMoon}
+              badgeColor={Palette.accent}
               title={
                 isLaunchLoading
                   ? 'Loading next launch...'
@@ -1048,7 +1046,7 @@ export default function DashboardScreen({ locked = false }: DashboardScreenProps
             <PreviewCard
               eyebrow="MOON PHASE"
               badge={moonPhasePercent === null ? 'LOADING' : 'LIVE'}
-              badgeColor={Palette.accentMoon}
+              badgeColor={Palette.accent}
               title={moonPhaseName}
               meta={`${formatMoonPercent(moonPhasePercent)} illuminated | ${formatMoonTrend(moonPhaseTrend)} | ${formatMoonDate(moonPhaseDate)}`}
               thumb={
@@ -1127,7 +1125,7 @@ export default function DashboardScreen({ locked = false }: DashboardScreenProps
                 error: newsError,
                 article: nasaArticle,
               })}
-              badgeColor={Palette.accentMoon}
+              badgeColor={Palette.accent}
               title={
                 isNewsLoading
                   ? 'Loading NASA news...'
@@ -1671,10 +1669,10 @@ const styles = StyleSheet.create({
   guestTopActions: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' },
   topSignInButton: { paddingHorizontal: 14, paddingVertical: 9, borderWidth: 1, borderColor: Palette.border, borderRadius: Radius.md },
   topSignInText: { color: Palette.textSecondary, fontSize: 9, fontWeight: '700', letterSpacing: 0.8 },
-  topCreateButton: { paddingHorizontal: 14, paddingVertical: 9, borderWidth: 1, borderColor: Palette.accentMoon, borderRadius: Radius.md },
-  topCreateText: { color: Palette.accentMoon, fontSize: 9, fontWeight: '700', letterSpacing: 0.8 },
+  topCreateButton: { paddingHorizontal: 14, paddingVertical: 9, borderWidth: 1, borderColor: Palette.accent, borderRadius: Radius.md },
+  topCreateText: { color: Palette.accent, fontSize: 9, fontWeight: '700', letterSpacing: 0.8 },
   cardLockOverlay: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, alignItems: 'center', justifyContent: 'center', backgroundColor: Palette.bgVoid + 'B8' },
-  cardLockCircle: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: Palette.accentMoon, borderRadius: 19, backgroundColor: Palette.surfaceRaised, marginBottom: 7 },
+  cardLockCircle: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: Palette.accent, borderRadius: 19, backgroundColor: Palette.surfaceRaised, marginBottom: 7 },
   cardLockIcon: { fontSize: 14 },
   cardLockTitle: { color: Palette.textPrimary, fontSize: 9, fontWeight: '700', letterSpacing: 1 },
   cardLockText: { color: Palette.textSecondary, fontSize: 9, marginTop: 3 },
@@ -1690,10 +1688,10 @@ const styles = StyleSheet.create({
 
   main: { flex: 1 },
   mainContent: {
-    padding: spacing.lg,
+    padding: Spacing.lg,
     paddingLeft: 20,
-    paddingBottom: spacing.xxl,
-    gap: spacing.md,
+    paddingBottom: Spacing.xxl,
+    gap: Spacing.md,
     width: '100%',
     maxWidth: dvw(1040),
     alignSelf: 'center',
@@ -1703,11 +1701,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    gap: spacing.md,
+    gap: Spacing.md,
   },
   eyebrow: {
     fontSize: 11,
-    color: Palette.accentMoon,
+    color: Palette.accent,
     letterSpacing: 1,
     marginBottom: 6,
     fontWeight: '600',
@@ -1736,8 +1734,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Palette.borderSoft,
     borderRadius: Radius.lg,
-    padding: spacing.lg,
-    gap: spacing.lg,
+    padding: Spacing.lg,
+    gap: Spacing.lg,
   },
   heroLeft: {},
   heroEyebrow: {
@@ -1751,15 +1749,15 @@ const styles = StyleSheet.create({
     fontSize: 28,
     fontWeight: '600',
     color: Palette.textPrimary,
-    marginBottom: spacing.md,
+    marginBottom: Spacing.md,
     lineHeight: 34,
   },
   heroStats: {
     flexDirection: 'row',
-    marginBottom: spacing.md,
+    marginBottom: Spacing.md,
     flexWrap: 'wrap',
-    rowGap: spacing.sm,
-    columnGap: spacing.lg,
+    rowGap: Spacing.sm,
+    columnGap: Spacing.lg,
   },
   heroMetaText: {
     fontSize: 13,
@@ -1775,26 +1773,26 @@ const styles = StyleSheet.create({
   },
   statValue: {
     fontSize: 16,
-    color: Palette.accentMoon,
+    color: Palette.accent,
     fontWeight: '600',
   },
   heroNow: {
     flexDirection: 'row',
     alignItems: 'center',
     alignSelf: 'stretch',
-    backgroundColor: Palette.accentMoon + '14',
+    backgroundColor: Palette.accent + '14',
     borderWidth: 1,
-    borderColor: Palette.accentMoon + '40',
+    borderColor: Palette.accent + '40',
     borderRadius: Radius.sm,
     borderTopLeftRadius: Radius.lg,
     borderTopRightRadius: Radius.lg,
     borderBottomLeftRadius: Radius.sm,
     borderBottomRightRadius: Radius.sm,
     padding: 10,
-    marginTop: -spacing.lg,
-    marginLeft: -spacing.lg,
-    marginRight: -spacing.lg,
-    marginBottom: spacing.lg,
+    marginTop: -Spacing.lg,
+    marginLeft: -Spacing.lg,
+    marginRight: -Spacing.lg,
+    marginBottom: Spacing.lg,
     gap: 8,
   },
   pulseDot: {
@@ -1831,7 +1829,7 @@ const styles = StyleSheet.create({
     borderRadius: 60,
     overflow: 'hidden',
     backgroundColor: Palette.bgDeep,
-    shadowColor: Palette.accentMoon,
+    shadowColor: Palette.accent,
     shadowOpacity: 0.4,
     shadowRadius: 30,
     elevation: 8,
@@ -1853,18 +1851,18 @@ const styles = StyleSheet.create({
     height: '100%',
     position: 'relative',
     overflow: 'hidden',
-    backgroundColor: '#29445E',
+    backgroundColor: Palette.moonShadow,
   },
   generatedMoonLightSurface: {
     ...StyleSheet.absoluteFill,
-    backgroundColor: '#E7ECF2',
+    backgroundColor: Palette.moonLit,
   },
   generatedMoonHalfLight: {
     position: 'absolute',
     top: 0,
     bottom: 0,
     width: '50%',
-    backgroundColor: '#E7ECF2',
+    backgroundColor: Palette.moonLit,
   },
   generatedMoonLeftSide: {
     left: 0,
@@ -1878,7 +1876,7 @@ const styles = StyleSheet.create({
     width: 96,
     height: 96,
     borderRadius: 48,
-    backgroundColor: '#29445E',
+    backgroundColor: Palette.moonShadow,
   },
   generatedMoonWaxingCrescentShade: {
     left: -18,
@@ -1892,7 +1890,7 @@ const styles = StyleSheet.create({
     width: 96,
     height: 96,
     borderRadius: 48,
-    backgroundColor: '#E7ECF2',
+    backgroundColor: Palette.moonLit,
   },
   generatedMoonWaxingGibbousLight: {
     right: -14,
@@ -1903,8 +1901,8 @@ const styles = StyleSheet.create({
   generatedMoonCrater: {
     position: 'absolute',
     borderWidth: 1,
-    borderColor: 'rgba(70, 86, 105, 0.24)',
-    backgroundColor: 'rgba(90, 108, 128, 0.22)',
+    borderColor: alpha(Palette.textMuted, 0.24),
+    backgroundColor: alpha(Palette.textMuted, 0.22),
   },
   generatedMoonCraterLarge: {
     width: 18,
@@ -1930,9 +1928,9 @@ const styles = StyleSheet.create({
   generatedMoonLimb: {
     ...StyleSheet.absoluteFill,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.26)',
+    borderColor: alpha(Palette.textPrimary, 0.26),
     borderRadius: 48,
-    backgroundColor: 'rgba(255, 255, 255, 0.03)',
+    backgroundColor: alpha(Palette.textPrimary, 0.03),
   },
   issHeroStage: {
     width: '100%',
@@ -1969,7 +1967,7 @@ const styles = StyleSheet.create({
     borderRadius: 48,
     overflow: 'hidden',
     backgroundColor: 'transparent',
-    shadowColor: Palette.accentMoon,
+    shadowColor: Palette.accent,
     shadowOpacity: 0.36,
     shadowRadius: 22,
     elevation: 6,
@@ -1991,7 +1989,7 @@ const styles = StyleSheet.create({
   sectionLabelRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.sm,
+    gap: Spacing.sm,
   },
   sectionLabelText: {
     fontSize: 12,
@@ -2008,7 +2006,7 @@ const styles = StyleSheet.create({
   previewGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: spacing.sm,
+    gap: Spacing.sm,
     justifyContent: 'space-between',
   },
   previewCard: {
@@ -2033,7 +2031,7 @@ const styles = StyleSheet.create({
     height: '100%',
   },
   previewBody: {
-    padding: spacing.sm,
+    padding: Spacing.sm,
     alignItems: 'stretch',
     gap: 3,
   },
@@ -2041,7 +2039,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    gap: spacing.sm,
+    gap: Spacing.sm,
     marginBottom: 3,
   },
   previewEyebrow: {
@@ -2116,7 +2114,7 @@ const styles = StyleSheet.create({
     marginLeft: -1.5,
     width: dvw(3),
     height: '60%',
-    backgroundColor: Palette.accentMoon,
+    backgroundColor: Palette.accent,
     opacity: 0.5,
   },
   launchRocket: { fontSize: 20 },
@@ -2126,14 +2124,14 @@ const styles = StyleSheet.create({
   },
   launchImageScrim: {
     ...StyleSheet.absoluteFill,
-    backgroundColor: 'rgba(5, 10, 22, 0.16)',
+    backgroundColor: alpha(Palette.bgDeep, 0.16),
   },
 
   issThumb: {
     flex: 1,
     backgroundColor: Palette.bgDeep,
     overflow: 'hidden',
-    padding: spacing.sm,
+    padding: Spacing.sm,
   },
   issHeroThumb: {
     minHeight: dvh(220),
@@ -2155,7 +2153,7 @@ const styles = StyleSheet.create({
     borderTopWidth: 2,
     borderLeftWidth: 1,
     borderRightWidth: 1,
-    borderColor: Palette.accentMoon,
+    borderColor: Palette.accent,
     borderTopLeftRadius: 180,
     borderTopRightRadius: 180,
     opacity: 0.58,
@@ -2191,10 +2189,10 @@ const styles = StyleSheet.create({
     width: dvw(88),
     height: dvh(46),
     borderRadius: Radius.sm,
-    backgroundColor: 'rgba(0, 212, 255, 0.08)',
+    backgroundColor: alpha(Palette.accent, 0.08),
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: Palette.accentMoon,
+    shadowColor: Palette.accent,
     shadowOpacity: 0.35,
     shadowRadius: 18,
     elevation: 5,
@@ -2288,7 +2286,7 @@ const styles = StyleSheet.create({
   },
   bodiesImageScrim: {
     ...StyleSheet.absoluteFill,
-    backgroundColor: 'rgba(5, 10, 22, 0.34)',
+    backgroundColor: alpha(Palette.bgDeep, 0.34),
   },
   bodiesSkyArc: {
     position: 'absolute',
@@ -2325,8 +2323,8 @@ const styles = StyleSheet.create({
     width: 12,
     height: 12,
     borderRadius: 6,
-    backgroundColor: Palette.accentMoon,
-    shadowColor: Palette.accentMoon,
+    backgroundColor: Palette.accent,
+    shadowColor: Palette.accent,
     shadowOpacity: 0.4,
     shadowRadius: 12,
   },
@@ -2393,7 +2391,7 @@ const styles = StyleSheet.create({
   },
   spacewalkImageScrim: {
     ...StyleSheet.absoluteFill,
-    backgroundColor: 'rgba(5, 10, 22, 0.28)',
+    backgroundColor: alpha(Palette.bgDeep, 0.28),
   },
   spacewalkBottomRow: {
     position: 'absolute',
@@ -2451,7 +2449,7 @@ const styles = StyleSheet.create({
   },
   newsScrim: {
     ...StyleSheet.absoluteFill,
-    backgroundColor: 'rgba(5, 10, 22, 0.3)',
+    backgroundColor: alpha(Palette.bgDeep, 0.3),
   },
   newsFallback: {
     flex: 1,
@@ -2460,7 +2458,7 @@ const styles = StyleSheet.create({
     backgroundColor: Palette.surfaceRaised,
   },
   newsFallbackText: {
-    color: Palette.accentMoon,
+    color: Palette.accent,
     fontSize: 28,
     lineHeight: 34,
     fontWeight: '800',
@@ -2476,7 +2474,7 @@ const styles = StyleSheet.create({
   },
   weatherImageScrim: {
     ...StyleSheet.absoluteFill,
-    backgroundColor: 'rgba(5, 10, 22, 0.3)',
+    backgroundColor: alpha(Palette.bgDeep, 0.3),
   },
   weatherReadout: {
     position: 'absolute',
@@ -2520,7 +2518,7 @@ const styles = StyleSheet.create({
   weatherBarFill: {
     height: '100%',
     borderRadius: 3,
-    backgroundColor: Palette.accentMoon,
+    backgroundColor: Palette.accent,
   },
   weatherBarValue: {
     width: dvw(34),
@@ -2538,12 +2536,12 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Palette.borderSoft,
     borderRadius: Radius.md,
-    padding: spacing.md,
+    padding: Spacing.md,
   },
   profileText: {
     flex: 1,
     minWidth: dvw(0),
-    marginLeft: spacing.md,
+    marginLeft: Spacing.md,
   },
   profileLevelProgress: {
     marginTop: 8,
@@ -2560,7 +2558,7 @@ const styles = StyleSheet.create({
   },
   profileLevelFill: {
     height: '100%',
-    backgroundColor: Palette.accentMoon,
+    backgroundColor: Palette.accent,
   },
   profileLevelMeta: {
     color: Palette.textTertiary,
@@ -2573,7 +2571,7 @@ const styles = StyleSheet.create({
     height: 48,
     borderRadius: 24,
     borderWidth: 2,
-    borderColor: Palette.accentMoon,
+    borderColor: Palette.accent,
     alignItems: 'center',
     justifyContent: 'center',
   },

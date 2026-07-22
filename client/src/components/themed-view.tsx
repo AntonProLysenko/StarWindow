@@ -1,16 +1,11 @@
 import { View, type ViewProps } from 'react-native';
 
-import { ThemeColor } from '@/constants/theme';
-import { useTheme } from '@/hooks/use-theme';
+import { Palette } from '@/constants/tokens';
 
-export type ThemedViewProps = ViewProps & {
-  lightColor?: string;
-  darkColor?: string;
-  type?: ThemeColor;
-};
-
-export function ThemedView({ style, lightColor, darkColor, type, ...otherProps }: ThemedViewProps) {
-  const theme = useTheme();
-
-  return <View style={[{ backgroundColor: theme[type ?? 'background'] }, style]} {...otherProps} />;
+/**
+ * View with the app's space-black background. Override `backgroundColor` in
+ * `style` (with a Palette token) for raised surfaces.
+ */
+export function ThemedView({ style, ...otherProps }: ViewProps) {
+  return <View style={[{ backgroundColor: Palette.bgVoid }, style]} {...otherProps} />;
 }

@@ -246,7 +246,7 @@ export default function EventsScreen() {
 
       {loading ? (
         <View style={styles.centerState}>
-          <ActivityIndicator color={Palette.accentMoon} />
+          <ActivityIndicator color={Palette.accent} />
           <Text style={styles.stateText}>Loading events…</Text>
         </View>
       ) : error ? (
@@ -305,7 +305,7 @@ const styles = StyleSheet.create({
   },
   eyebrow: {
     fontSize: 11,
-    color: Palette.accentMoon,
+    color: Palette.accent,
     letterSpacing: 1,
     fontWeight: '600',
     marginBottom: 6,
@@ -333,8 +333,8 @@ const styles = StyleSheet.create({
     backgroundColor: Palette.surface,
   },
   filterPillActive: {
-    backgroundColor: Palette.accentMoon + '20',
-    borderColor: Palette.accentMoon,
+    backgroundColor: Palette.accent + '20',
+    borderColor: Palette.accent,
   },
   filterPillText: {
     fontSize: 12,
@@ -342,7 +342,7 @@ const styles = StyleSheet.create({
     color: Palette.textSecondary,
   },
   filterPillTextActive: {
-    color: Palette.accentMoon,
+    color: Palette.accent,
   },
   list: {
     flex: 1,

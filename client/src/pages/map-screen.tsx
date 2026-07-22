@@ -5,8 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { StarMap, type RocketLaunch, type StargazingSpot } from '@/components/star-map';
 import { ThemedText } from '@/components/themed-text';
-import { BottomTabInset, Spacing } from '@/constants/theme';
-import { useTheme } from '@/hooks/use-theme';
+import { BottomTabInset, Palette, Spacing } from '@/constants/tokens';
 import { fetchLaunches } from '@/lib/astronomy';
 import { fetchBestSpot, type BestSpot } from '@/lib/map-api';
 import { getOrRequestUserLocation } from '@/utilities/user-location-service';
@@ -42,7 +41,6 @@ const SAMPLE_SPOTS: StargazingSpot[] = [
 
 export default function MapScreen() {
   const safeAreaInsets = useSafeAreaInsets();
-  const theme = useTheme();
   const [center, setCenter] = useState<[number, number] | undefined>(undefined);
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [launches, setLaunches] = useState<RocketLaunch[]>([]);
@@ -113,7 +111,7 @@ export default function MapScreen() {
 
   const insets = {
     ...safeAreaInsets,
-    bottom: safeAreaInsets.bottom + BottomTabInset + Spacing.three,
+    bottom: safeAreaInsets.bottom + BottomTabInset + Spacing.md,
   };
 
   const contentPlatformStyle = Platform.select({
@@ -124,14 +122,14 @@ export default function MapScreen() {
       paddingBottom: insets.bottom,
     },
     web: {
-      paddingTop: Spacing.two,
-      paddingBottom: Spacing.two,
+      paddingTop: Spacing.sm,
+      paddingBottom: Spacing.sm,
     },
   });
 
   return (
     <ScrollView
-      style={[styles.scrollView, { backgroundColor: theme.background }]}
+      style={styles.scrollView}
       contentInset={insets}
       contentContainerStyle={[styles.contentContainer, contentPlatformStyle]}>
       <View style={styles.container}>
@@ -160,6 +158,7 @@ export default function MapScreen() {
 const styles = StyleSheet.create({
   scrollView: {
     flex: 1,
+    backgroundColor: Palette.bgVoid,
   },
   contentContainer: {
     flexDirection: 'row',
@@ -168,8 +167,8 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     width: '100%',
-    paddingHorizontal: Spacing.two,
-    gap: Spacing.two,
+    paddingHorizontal: Spacing.sm,
+    gap: Spacing.sm,
   },
   header: {
     alignItems: 'center',

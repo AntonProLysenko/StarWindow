@@ -45,8 +45,8 @@ const styles = StyleSheet.create({
     width: '100%',
     borderRadius: Radius.lg,
     borderWidth: 1,
-    borderColor: Palette.cardBorder,
-    backgroundColor: Palette.cardBackground,
+    borderColor: Palette.borderSoft,
+    backgroundColor: Palette.bgDeep,
     overflow: 'hidden',
     // Cyan glow, matching the login card.
     shadowColor: Palette.accent,

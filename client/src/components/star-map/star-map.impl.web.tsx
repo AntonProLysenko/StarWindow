@@ -55,8 +55,8 @@ const LAYER_DEFS: { key: keyof LayerState; label: string }[] = [
 function bortleColor(bortle?: number): string {
   if (bortle == null) return Palette.accent;
   if (bortle <= 3) return Palette.accent; // pristine / rural — brand cyan
-  if (bortle <= 5) return '#ffd166'; // suburban transition — amber
-  return '#ef476f'; // bright — rose
+  if (bortle <= 5) return Palette.accentAmber; // suburban transition
+  return Palette.accentRed; // bright sky
 }
 
 function formatNet(net?: string): string | null {
@@ -66,7 +66,7 @@ function formatNet(net?: string): string | null {
 }
 
 function goToLaunch(launchName: string) {
-  router.push({ pathname: '/explore', params: { launch: launchName } });
+  router.push({ pathname: '/events', params: { launch: launchName } });
 }
 
 function isValidLatLng(lat: number, lng: number) {
@@ -329,7 +329,7 @@ export default function StarMapImpl({
             center={[safeUserLocation.lat, safeUserLocation.lng]}
             radius={6}
             pathOptions={{
-              color: Palette.white,
+              color: Palette.textPrimary,
               fillColor: Palette.accent,
               fillOpacity: 1,
               weight: 3,
@@ -356,8 +356,8 @@ export default function StarMapImpl({
               center={[bestSpot.lat, bestSpot.lon]}
               radius={6}
               pathOptions={{
-                color: Palette.white,
-                fillColor: '#2E9E5B',
+                color: Palette.textPrimary,
+                fillColor: Palette.accentGreen,
                 fillOpacity: 1,
                 weight: 2,
               }}>
@@ -397,8 +397,8 @@ const styles = StyleSheet.create({
     height: 34,
     borderRadius: Radius.sm,
     borderWidth: 1,
-    borderColor: Palette.cardBorder,
-    backgroundColor: Palette.cardBackground,
+    borderColor: Palette.borderSoft,
+    backgroundColor: Palette.bgDeep,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -410,10 +410,10 @@ const styles = StyleSheet.create({
   },
   panelCard: {
     minWidth: dvw(190),
-    backgroundColor: Palette.cardBackground,
+    backgroundColor: Palette.bgDeep,
     borderRadius: Radius.sm,
     borderWidth: 1,
-    borderColor: Palette.cardBorder,
+    borderColor: Palette.borderSoft,
     padding: 12,
     gap: 4,
     shadowColor: Palette.accent,
@@ -422,7 +422,7 @@ const styles = StyleSheet.create({
     shadowRadius: 16,
   },
   panelTitle: {
-    color: Palette.tagline,
+    color: Palette.textMuted,
     fontSize: 10,
     letterSpacing: 2,
     marginBottom: 4,
@@ -435,16 +435,16 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   rowLabel: {
-    color: Palette.inputText,
+    color: Palette.textSecondary,
     fontSize: 13,
   },
   pill: {
     width: dvw(34),
     height: dvh(18),
     borderRadius: 9,
-    backgroundColor: Palette.inputBackground,
+    backgroundColor: Palette.surface,
     borderWidth: 1,
-    borderColor: Palette.inputBorder,
+    borderColor: Palette.border,
     padding: 2,
     justifyContent: 'center',
   },
@@ -456,7 +456,7 @@ const styles = StyleSheet.create({
     width: 12,
     height: 12,
     borderRadius: 6,
-    backgroundColor: Palette.tagline,
+    backgroundColor: Palette.textMuted,
   },
   knobOn: {
     backgroundColor: Palette.accent,
@@ -467,10 +467,10 @@ const styles = StyleSheet.create({
     bottom: 24,
     left: 12,
     width: dvw(200),
-    backgroundColor: Palette.cardBackground,
+    backgroundColor: Palette.bgDeep,
     borderRadius: Radius.sm,
     borderWidth: 1,
-    borderColor: Palette.cardBorder,
+    borderColor: Palette.borderSoft,
     padding: 12,
     gap: 8,
     zIndex: 1100,
@@ -485,7 +485,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   sliderTitle: {
-    color: Palette.tagline,
+    color: Palette.textMuted,
     fontSize: 10,
     letterSpacing: 2,
   },
