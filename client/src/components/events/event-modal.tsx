@@ -87,7 +87,7 @@ export function EventModal({
 }) {
   const isLaunch = event.category === 'launch';
   const accent = isLaunch ? LAUNCH_ACCENT : EVENT_ACCENT;
-  const canSaveEvent = !String(event.event_id).startsWith('dashboard-');
+  const canSaveEvent = /^\d+$/.test(String(event.event_id));
   const fallbackIcon = fallbackIconSource(event);
   const { visible, tooFar, distanceMiles } = describeVisibility(event, userLat, userLon);
   const hasWebcast = Boolean(event.video_url) || event.webcast_live;
@@ -185,7 +185,9 @@ export function EventModal({
 
   // --- fetch viewing score for the user's location (only if visible) ---
   useEffect(() => {
+    setScore(null);
     if (!visible || userLat == null || userLon == null) return;
+
     const controller = new AbortController();
     setScoreLoading(true);
     fetchViewingScore(userLat, userLon, controller.signal)
@@ -195,7 +197,7 @@ export function EventModal({
       })
       .finally(() => setScoreLoading(false));
     return () => controller.abort();
-  }, [visible, userLat, userLon]);
+  }, [event.event_id, visible, userLat, userLon]);
 
   // --- seed saved state ---
   useEffect(() => {
@@ -528,20 +530,21 @@ export function EventModal({
                 )
               ) : null}
 
-              {/* Save event */}
-              <Pressable
-                style={[
-                  styles.saveBtn,
-                  saved && styles.saveBtnSaved,
-                  (!canSaveEvent || userId == null || saveBusy) && styles.saveBtnDisabled,
-                ]}
-                onPress={handleSaveToggle}
-                disabled={!canSaveEvent || userId == null || saveBusy}
-                aria-label={saved ? 'Remove saved event' : 'Save event'}>
-                <Text style={[styles.saveBtnText, saved && styles.saveBtnTextSaved]}>
-                  {!canSaveEvent ? 'Dashboard preview' : userId == null ? 'Log in to save' : saved ? '✓ Saved' : 'Save event'}
-                </Text>
-              </Pressable>
+              {canSaveEvent ? (
+                <Pressable
+                  style={[
+                    styles.saveBtn,
+                    saved && styles.saveBtnSaved,
+                    (userId == null || saveBusy) && styles.saveBtnDisabled,
+                  ]}
+                  onPress={handleSaveToggle}
+                  disabled={userId == null || saveBusy}
+                  aria-label={saved ? 'Remove saved event' : 'Save event'}>
+                  <Text style={[styles.saveBtnText, saved && styles.saveBtnTextSaved]}>
+                    {userId == null ? 'Log in to save' : saved ? '✓ Saved' : 'Save event'}
+                  </Text>
+                </Pressable>
+              ) : null}
               {saveError ? <Text style={styles.saveError}>{saveError}</Text> : null}
 
               {saved && savedId ? (

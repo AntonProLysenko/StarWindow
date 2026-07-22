@@ -9,6 +9,8 @@ const pendingCalendarSourceRequests = new Map<string, Promise<unknown | null>>()
 
 type RawEvent = {
   id?: number | string;
+  event_id?: number | string;
+  category?: 'event' | 'launch';
   name?: string;
   type?: string;
   date?: string;
@@ -17,10 +19,14 @@ type RawEvent = {
   description?: string | null;
   webcast_live?: boolean;
   video_urls?: string[];
+  video_url?: string | null;
   image_url?: string | null;
 };
 
 type RawLaunch = {
+  id?: number | string;
+  launch_id?: number | string;
+  event_id?: number | string;
   name?: string;
   status?: string;
   net?: string;
@@ -39,6 +45,8 @@ type RawLaunch = {
   } | null;
   provider?: string;
   rocket?: string;
+  webcast_live?: boolean;
+  video_url?: string | null;
   image?: string | null;
 };
 
@@ -93,6 +101,9 @@ type BodiesResponse = {
 
 export type CalendarEvent = {
   id: string;
+  sourceId?: number | string;
+  eventId?: number | string | null;
+  category?: 'event' | 'launch';
   date: number;
   startDate: string;
   title: string;
@@ -100,6 +111,20 @@ export type CalendarEvent = {
   detail: string;
   icon: string;
   type?: string;
+  datePrecision?: string | null;
+  webcastLive?: boolean;
+  videoUrl?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  launchDetails?: {
+    rocket_model: string | null;
+    provider: string | null;
+    mission_name: string | null;
+    mission_type: string | null;
+    pad_name: string | null;
+    pad_location: string | null;
+    status: string | null;
+  } | null;
   location?: string | null;
   imageUrl?: string | null;
 };
@@ -163,6 +188,9 @@ function toCalendarEvent(event: RawEvent, index: number): CalendarEvent | null {
 
   return {
     id: String(event.id ?? `${event.name ?? 'event'}-${event.date}-${index}`),
+    sourceId: event.id,
+    eventId: event.event_id ?? event.id ?? null,
+    category: event.category ?? 'event',
     date: start.getDate(),
     startDate: start.toISOString(),
     title: event.name ?? 'Space event',
@@ -170,6 +198,9 @@ function toCalendarEvent(event: RawEvent, index: number): CalendarEvent | null {
     detail: event.description ?? event.location ?? 'No event details available.',
     icon: getEventIcon(event.type),
     type: event.type,
+    datePrecision: event.date_precision ?? null,
+    webcastLive: event.webcast_live ?? false,
+    videoUrl: event.video_url ?? event.video_urls?.[0] ?? null,
     location: event.location,
     imageUrl: event.image_url,
   };
@@ -189,7 +220,10 @@ function toLaunchCalendarEvent(launch: RawLaunch, index: number): CalendarEvent 
   ].filter(Boolean);
 
   return {
-    id: `launch-${launch.name ?? index}-${launch.net}`,
+    id: String(launch.launch_id ?? launch.id ?? `launch-${launch.name ?? index}-${launch.net}`),
+    sourceId: launch.launch_id ?? launch.id,
+    eventId: launch.event_id ?? null,
+    category: 'launch',
     date: start.getDate(),
     startDate: start.toISOString(),
     title: launch.name ?? 'Rocket launch',
@@ -197,6 +231,20 @@ function toLaunchCalendarEvent(launch: RawLaunch, index: number): CalendarEvent 
     detail: detailParts.join(' | ') || 'Upcoming rocket launch.',
     icon: getEventIcon('Launch'),
     type: 'Launch',
+    datePrecision: launch.net_precision ?? null,
+    webcastLive: launch.webcast_live ?? false,
+    videoUrl: launch.video_url ?? null,
+    latitude: launch.pad?.latitude == null ? null : Number(launch.pad.latitude),
+    longitude: launch.pad?.longitude == null ? null : Number(launch.pad.longitude),
+    launchDetails: {
+      rocket_model: launch.rocket ?? null,
+      provider: launch.provider ?? null,
+      mission_name: launch.mission?.name ?? null,
+      mission_type: launch.mission?.type ?? null,
+      pad_name: launch.pad?.name ?? null,
+      pad_location: launch.pad?.location ?? null,
+      status: launch.status ?? null,
+    },
     location: launch.pad?.location ?? launch.pad?.name ?? null,
     imageUrl: launch.image ?? null,
   };

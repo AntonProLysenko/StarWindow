@@ -148,10 +148,22 @@ function isDateOnly(value) {
 
 function mapCachedLaunch(row) {
   return {
+    id: row.launch_id,
+    launch_id: row.launch_id,
+    event_id: row.event_id,
+    category: "launch",
     name: row.name,
     status: row.status || row.launch_status,
     net: row.net,
     net_precision: row.net_precision || row.date_precision,
+    date: row.net,
+    date_precision: row.date_precision || row.net_precision,
+    description: row.mission_description,
+    location: row.pad_location || row.pad_name || null,
+    latitude: row.pad_lat == null ? null : Number(row.pad_lat),
+    longitude: row.pad_long == null ? null : Number(row.pad_long),
+    webcast_live: row.webcast_live ?? false,
+    video_url: row.video_url || null,
     mission: row.mission_name
       ? {
           name: row.mission_name,
@@ -171,5 +183,15 @@ function mapCachedLaunch(row) {
     provider: row.provider_name,
     rocket: row.rocket_model,
     image: row.image_url || null,
+    image_url: row.image_url || null,
+    launch_details: {
+      rocket_model: row.rocket_model || null,
+      provider: row.provider_name || null,
+      mission_name: row.mission_name || null,
+      mission_type: row.mission_type || null,
+      pad_name: row.pad_name || null,
+      pad_location: row.pad_location || null,
+      status: row.status || row.launch_status || null,
+    },
   };
 }

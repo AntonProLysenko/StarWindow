@@ -13,13 +13,19 @@ const EVENTS_PAGE_SIZE = 100;
 function mapCachedEvent(row) {
   return {
     id: row.event_id,
+    event_id: row.event_id,
+    category: "event",
     name: row.name,
     type: row.event_type,
     date: row.start_time,
     end_date: row.end_time,
     date_precision: row.date_precision,
     description: row.description,
+    location: null,
+    latitude: null,
+    longitude: null,
     webcast_live: row.webcast_live,
+    video_url: row.video_url || null,
     video_urls: row.video_url ? [row.video_url] : [],
     image_url: row.image_url,
   };
