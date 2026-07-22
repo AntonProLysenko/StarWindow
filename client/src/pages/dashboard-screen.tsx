@@ -967,25 +967,7 @@ export default function DashboardScreen({ locked = false }: DashboardScreenProps
               title={calendarTitle}
               meta={calendarMeta}
               thumb={<CalendarThumb events={currentMonthEvents} />}
-              onPress={() => router.push(eventDetailRoute(nextCalendarEvent
-                ? {
-                    eventId: nextCalendarEvent.id,
-                    category: nextCalendarEvent.type?.toLowerCase().includes('launch') ? 'launch' : 'event',
-                    type: nextCalendarEvent.type ?? 'Event',
-                    name: nextCalendarEvent.title,
-                    date: nextCalendarEvent.startDate,
-                    description: nextCalendarEvent.detail,
-                    imageUrl: nextCalendarEvent.imageUrl,
-                    location: nextCalendarEvent.location,
-                  }
-                : {
-                    category: 'event',
-                    type: 'Calendar',
-                    name: calendarTitle,
-                    date: today.toISOString(),
-                    description: calendarMeta,
-                    synthetic: true,
-                  }) as any)}
+              onPress={() => router.push('/calendar' as any)}
               locked={isLocked}
             />
 
