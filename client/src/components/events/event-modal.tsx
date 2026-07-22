@@ -4,6 +4,7 @@
 // details, score gauge) so a future detail page can reuse the pieces.
 
 import { useEffect, useRef, useState } from 'react';
+import * as ImagePicker from 'expo-image-picker';
 import {
   ActivityIndicator,
   Animated,
@@ -25,18 +26,41 @@ import { fallbackIconSource } from '@/components/events/event-fallback-icon';
 import { formatEventDate } from '@/components/events/event-card';
 import { Palette, Radius, alpha } from '@/constants/tokens';
 import {
+  addSavedUserEventImage,
   checkEventSaved,
+  deleteSavedUserEventImage,
   deleteUserEvent,
   fetchViewingScore,
   saveUserEvent,
   updateSavedUserEvent,
   type EventListItem,
+  type SavedUserEventImage,
 } from '@/lib/events-api';
 import { describeVisibility } from '@/lib/event-visibility';
 import { dvw, dvh } from '@/utilities/responsive-dimensions';
 
 const LAUNCH_ACCENT = Palette.accentRed;
 const EVENT_ACCENT = Palette.accent;
+
+// ImgBB upload — reads the key from EXPO_PUBLIC_IMGBB_API_KEY (see .env).
+const IMGBB_API_KEY = process.env.EXPO_PUBLIC_IMGBB_API_KEY;
+
+async function uploadImageToImgbb(base64: string): Promise<string> {
+  const formData = new FormData();
+  formData.append('key', IMGBB_API_KEY ?? '');
+  formData.append('image', base64);
+
+  const res = await fetch('https://api.imgbb.com/1/upload', {
+    method: 'POST',
+    body: formData,
+  });
+
+  const json = await res.json();
+  if (!json.success) {
+    throw new Error(json.error?.message ?? 'Upload failed');
+  }
+  return json.data.url as string;
+}
 
 function openUrl(url: string) {
   if (Platform.OS === 'web' && typeof window !== 'undefined') {
@@ -79,6 +103,7 @@ export function EventModal({
   const [savedId, setSavedId] = useState<string | null>(null);
   const [saveBusy, setSaveBusy] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+
   const [note, setNote] = useState(() => getSavedEventNote(event));
   const [savedNote, setSavedNote] = useState(() => getSavedEventNote(event));
   const [noteBusy, setNoteBusy] = useState(false);
@@ -86,6 +111,16 @@ export function EventModal({
   const [noteError, setNoteError] = useState<string | null>(null);
   const [noteEditing, setNoteEditing] = useState(() => !normalizeNote(getSavedEventNote(event)));
   const [noteHovered, setNoteHovered] = useState(false);
+
+  // --- photos ---
+  const [images, setImages] = useState<SavedUserEventImage[]>([]);
+  const [stagedUri, setStagedUri] = useState<string | null>(null); // local preview, not uploaded yet
+  const [stagedBase64, setStagedBase64] = useState<string | null>(null);
+  const [imageCaption, setImageCaption] = useState('');
+  const [imageUploading, setImageUploading] = useState(false);
+  const [imageError, setImageError] = useState<string | null>(null);
+  const [imagePickerOpen, setImagePickerOpen] = useState(false);
+  const [imageBusyId, setImageBusyId] = useState<string | null>(null);
 
   // --- enter animation (fade + scale) ---
   const anim = useRef(new Animated.Value(0)).current;
@@ -174,6 +209,9 @@ export function EventModal({
         setSavedNote(r.event_comment ?? '');
         setNoteEditing(!normalizeNote(r.event_comment));
         setNoteHovered(false);
+        // NOTE: checkEventSaved doesn't currently return existing photos, so
+        // the gallery starts empty each time the modal opens. Photos added
+        // in this session will still show up immediately below.
       })
       .catch(() => {});
     return () => controller.abort();
@@ -187,6 +225,8 @@ export function EventModal({
     setNoteHovered(false);
     setNoteMessage(null);
     setNoteError(null);
+    setImages([]);
+    cancelStagedImage();
   }, [event]);
 
   async function handleSaveToggle() {
@@ -216,6 +256,7 @@ export function EventModal({
         setSavedId(null);
         setNote('');
         setSavedNote('');
+        setImages([]);
         onSavedEventUpdated?.({ event_comment: null });
       } catch {
         setSaved(true); // rollback
@@ -273,6 +314,105 @@ export function EventModal({
       setNoteError('Could not update note.');
     } finally {
       setNoteBusy(false);
+    }
+  }
+
+  // --- photo capture ---
+
+  async function pickFromLibrary() {
+    setImageError(null);
+    setImagePickerOpen(false);
+
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      setImageError('Permission to access photos was denied.');
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      quality: 0.8,
+      base64: true,
+    });
+
+    if (result.canceled) return;
+    stageAsset(result.assets[0]);
+  }
+
+  async function takePhoto() {
+    setImageError(null);
+    setImagePickerOpen(false);
+
+    if (Platform.OS === 'web') {
+      setImageError('Camera capture is not supported in the browser. Please choose a photo instead.');
+      return;
+    }
+
+    const permission = await ImagePicker.requestCameraPermissionsAsync();
+    if (!permission.granted) {
+      setImageError('Permission to use the camera was denied.');
+      return;
+    }
+
+    const result = await ImagePicker.launchCameraAsync({
+      allowsEditing: true,
+      quality: 0.8,
+      base64: true,
+    });
+
+    if (result.canceled) return;
+    stageAsset(result.assets[0]);
+  }
+
+  function stageAsset(asset: ImagePicker.ImagePickerAsset) {
+    if (!asset.base64) {
+      setImageError('Could not read the selected image.');
+      return;
+    }
+    setStagedUri(asset.uri);
+    setStagedBase64(asset.base64);
+    setImageCaption('');
+  }
+
+  function cancelStagedImage() {
+    setStagedUri(null);
+    setStagedBase64(null);
+    setImageCaption('');
+    setImageError(null);
+  }
+
+  async function confirmImageUpload() {
+    if (!stagedBase64 || !savedId) return;
+    setImageUploading(true);
+    setImageError(null);
+
+    try {
+      const hostedUrl = await uploadImageToImgbb(stagedBase64);
+      const savedImage = await addSavedUserEventImage(savedId, {
+        image_url: hostedUrl,
+        caption: imageCaption.trim() || null,
+      });
+      setImages((prev) => [...prev, savedImage]);
+      cancelStagedImage();
+    } catch {
+      setImageError('Image upload failed. Try again.');
+    } finally {
+      setImageUploading(false);
+    }
+  }
+
+  async function handleRemoveImage(image: SavedUserEventImage) {
+    if (!savedId || imageBusyId) return;
+    setImageBusyId(image.user_event_image_id);
+    setImageError(null);
+    try {
+      await deleteSavedUserEventImage(savedId, image.user_event_image_id);
+      setImages((prev) => prev.filter((img) => img.user_event_image_id !== image.user_event_image_id));
+    } catch {
+      setImageError('Could not remove photo.');
+    } finally {
+      setImageBusyId(null);
     }
   }
 
@@ -464,6 +604,103 @@ export function EventModal({
                   )}
                   {noteMessage ? <Text style={styles.noteSuccess}>{noteMessage}</Text> : null}
                   {noteError ? <Text style={styles.noteError}>{noteError}</Text> : null}
+                </View>
+              ) : null}
+
+              {saved && savedId ? (
+                <View style={styles.noteSection}>
+                  <Text style={styles.noteSectionTitle}>PHOTOS</Text>
+
+                  {images.length > 0 ? (
+                    <ScrollView
+                      horizontal
+                      showsHorizontalScrollIndicator={false}
+                      contentContainerStyle={{ gap: 10 }}>
+                      {images.map((img) => (
+                        <View key={img.user_event_image_id} style={{ width: 120 }}>
+                          <Image
+                            source={{ uri: img.image_url }}
+                            style={{ width: 120, height: 120, borderRadius: 8 }}
+                            resizeMode="cover"
+                          />
+                          {img.caption ? (
+                            <Text
+                              style={{ fontSize: 11, color: Palette.textSecondary, marginTop: 4 }}
+                              numberOfLines={2}>
+                              {img.caption}
+                            </Text>
+                          ) : null}
+                          <Pressable
+                            onPress={() => handleRemoveImage(img)}
+                            disabled={imageBusyId === img.user_event_image_id}
+                            style={[styles.noteSecondaryButton, { marginTop: 4 }]}>
+                            <Text style={styles.noteSecondaryButtonText}>
+                              {imageBusyId === img.user_event_image_id ? 'REMOVING…' : 'REMOVE'}
+                            </Text>
+                          </Pressable>
+                        </View>
+                      ))}
+                    </ScrollView>
+                  ) : null}
+
+                  {stagedUri ? (
+                    <View style={{ gap: 10 }}>
+                      <Image
+                        source={{ uri: stagedUri }}
+                        style={{ width: '100%', height: 180, borderRadius: 8 }}
+                        resizeMode="cover"
+                      />
+                      <TextInput
+                        value={imageCaption}
+                        onChangeText={setImageCaption}
+                        placeholder="Describe this photo..."
+                        placeholderTextColor={Palette.textTertiary}
+                        multiline
+                        textAlignVertical="top"
+                        style={styles.noteInput}
+                        editable={!imageUploading}
+                      />
+                      <View style={styles.noteActions}>
+                        <Pressable
+                          onPress={confirmImageUpload}
+                          disabled={imageUploading}
+                          style={[styles.noteButton, imageUploading && styles.noteButtonDisabled]}>
+                          <Text style={styles.noteButtonText}>
+                            {imageUploading ? 'UPLOADING…' : 'SAVE PHOTO'}
+                          </Text>
+                        </Pressable>
+                        <Pressable
+                          onPress={cancelStagedImage}
+                          disabled={imageUploading}
+                          style={styles.noteSecondaryButton}>
+                          <Text style={styles.noteSecondaryButtonText}>CANCEL</Text>
+                        </Pressable>
+                      </View>
+                    </View>
+                  ) : imagePickerOpen ? (
+                    <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
+                      <Pressable style={styles.noteButton} onPress={takePhoto}>
+                        <Text style={styles.noteButtonText}>TAKE PHOTO</Text>
+                      </Pressable>
+                      <Pressable style={styles.noteButton} onPress={pickFromLibrary}>
+                        <Text style={styles.noteButtonText}>CHOOSE PHOTO</Text>
+                      </Pressable>
+                      <Pressable
+                        style={styles.noteSecondaryButton}
+                        onPress={() => setImagePickerOpen(false)}>
+                        <Text style={styles.noteSecondaryButtonText}>CANCEL</Text>
+                      </Pressable>
+                    </View>
+                  ) : (
+                    <Pressable
+                      style={styles.saveBtn}
+                      onPress={() => setImagePickerOpen(true)}
+                      aria-label="Add photo">
+                      <Text style={styles.saveBtnText}>Add photo</Text>
+                    </Pressable>
+                  )}
+
+                  {imageError ? <Text style={styles.saveError}>{imageError}</Text> : null}
                 </View>
               ) : null}
             </ScrollView>
