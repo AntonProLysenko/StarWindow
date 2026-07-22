@@ -322,13 +322,6 @@ function EditProfile({
       </View>
 
       <View style={styles.panel}>
-        <Text style={styles.panelEyebrow}>READ ONLY</Text>
-        <InfoRow label="User ID" value={user?.user_id != null ? String(user.user_id) : '--'} />
-        <InfoRow label="Status" value={user?.status ?? 'Unavailable'} />
-        <InfoRow label="Status ID" value={user?.status_id != null ? String(user.status_id) : '--'} />
-      </View>
-
-      <View style={styles.panel}>
         <Text style={styles.panelEyebrow}>EVENT PREFERENCES</Text>
         <Text style={styles.panelCopy}>Choose which sky events should shape your calendar and feed.</Text>
         {isLoading ? (
@@ -523,15 +516,6 @@ function ProfileField({
         keyboardType={keyboardType}
         autoCorrect={false}
       />
-    </View>
-  );
-}
-
-function InfoRow({ label, value }: { label: string; value: string }) {
-  return (
-    <View style={styles.infoRow}>
-      <Text style={styles.infoLabel}>{label}</Text>
-      <Text style={styles.infoValue}>{value}</Text>
     </View>
   );
 }
@@ -800,22 +784,5 @@ const styles = StyleSheet.create({
     color: Palette.textSecondary,
     fontSize: 14,
     lineHeight: 20,
-  },
-  infoRow: {
-    borderBottomWidth: 1,
-    borderBottomColor: Palette.borderSoft,
-    paddingVertical: 10,
-    gap: 4,
-  },
-  infoLabel: {
-    color: Palette.textTertiary,
-    fontSize: 12,
-    fontWeight: '800',
-    textTransform: 'uppercase',
-  },
-  infoValue: {
-    color: Palette.textPrimary,
-    fontSize: 16,
-    fontWeight: '700',
   },
 });
