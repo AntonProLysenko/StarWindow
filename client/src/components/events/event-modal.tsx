@@ -121,6 +121,7 @@ export function EventModal({
   const [imageError, setImageError] = useState<string | null>(null);
   const [imagePickerOpen, setImagePickerOpen] = useState(false);
   const [imageBusyId, setImageBusyId] = useState<string | null>(null);
+  const [fullScreenImage, setFullScreenImage] = useState<SavedUserEventImage | null>(null);
 
   // --- enter animation (fade + scale) ---
   const anim = useRef(new Animated.Value(0)).current;
@@ -229,6 +230,7 @@ export function EventModal({
     setNoteMessage(null);
     setNoteError(null);
     setImages(getSavedEventImages(event));
+    setFullScreenImage(null);
     cancelStagedImage();
   }, [event]);
 
@@ -412,6 +414,9 @@ export function EventModal({
     try {
       await deleteSavedUserEventImage(savedId, image.user_event_image_id);
       setImages((prev) => prev.filter((img) => img.user_event_image_id !== image.user_event_image_id));
+      setFullScreenImage((current) =>
+        current?.user_event_image_id === image.user_event_image_id ? null : current
+      );
     } catch {
       setImageError('Could not remove photo.');
     } finally {
@@ -444,7 +449,8 @@ export function EventModal({
             <ScrollView
               style={styles.scroll}
               contentContainerStyle={styles.scrollContent}
-              showsVerticalScrollIndicator={false}>
+              showsVerticalScrollIndicator={false}
+              scrollEnabled={!fullScreenImage}>
               {/* Enlarged image / fallback */}
               <View style={[styles.hero, isLaunch && { borderColor: LAUNCH_ACCENT + '55' }]}>
                 {event.image_url ? (
@@ -622,11 +628,15 @@ export function EventModal({
                       contentContainerStyle={{ gap: 10 }}>
                       {images.map((img) => (
                         <View key={img.user_event_image_id} style={{ width: 120 }}>
-                          <Image
-                            source={{ uri: img.image_url }}
-                            style={{ width: 120, height: 120, borderRadius: 8 }}
-                            resizeMode="cover"
-                          />
+                          <Pressable
+                            onPress={() => setFullScreenImage(img)}
+                            aria-label="Open photo full screen">
+                            <Image
+                              source={{ uri: img.image_url }}
+                              style={{ width: 120, height: 120, borderRadius: 8 }}
+                              resizeMode="cover"
+                            />
+                          </Pressable>
                           {img.caption ? (
                             <Text
                               style={{ fontSize: 11, color: Palette.textSecondary, marginTop: 4 }}
@@ -711,6 +721,39 @@ export function EventModal({
           </View>
         </Animated.View>
       </View>
+
+      {fullScreenImage ? (
+        <View style={[styles.root, styles.fullScreenImageRoot, Platform.OS === 'web' && ({ position: 'fixed' } as object)]}>
+          <Animated.View style={[styles.backdrop, { opacity: anim }]}>
+            <Pressable
+              style={StyleSheet.absoluteFill}
+              onPress={() => setFullScreenImage(null)}
+              aria-label="Close full screen photo"
+            />
+          </Animated.View>
+
+          <View style={styles.center} pointerEvents="box-none">
+            <Animated.View style={[styles.fullScreenImageCard, cardAnimStyle]}>
+              <View style={[styles.dialog, styles.fullScreenImageDialog]}>
+                <Pressable
+                  style={styles.closeBtn}
+                  onPress={() => setFullScreenImage(null)}
+                  aria-label="Close full screen photo">
+                  <Text style={styles.closeIcon}>✕</Text>
+                </Pressable>
+                <Image
+                  source={{ uri: fullScreenImage.image_url }}
+                  style={styles.fullScreenImage}
+                  resizeMode="contain"
+                />
+                {fullScreenImage.caption ? (
+                  <Text style={styles.fullScreenImageCaption}>{fullScreenImage.caption}</Text>
+                ) : null}
+              </View>
+            </Animated.View>
+          </View>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -1045,5 +1088,34 @@ const styles = StyleSheet.create({
     color: Palette.accentRed,
     fontSize: 12,
     fontWeight: '700',
+  },
+  fullScreenImageRoot: {
+    zIndex: 20,
+  },
+  fullScreenImageCard: {
+    width: '100%',
+    maxWidth: dvw(1100),
+    height: '100%',
+    maxHeight: '92%',
+  },
+  fullScreenImageDialog: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 20,
+  },
+  fullScreenImage: {
+    width: '100%',
+    flex: 1,
+    minHeight: dvh(0),
+  },
+  fullScreenImageCaption: {
+    color: Palette.textPrimary,
+    backgroundColor: alpha(Palette.bgDeep, 0.78),
+    borderRadius: Radius.sm,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 13,
+    lineHeight: 18,
+    textAlign: 'center',
   },
 });

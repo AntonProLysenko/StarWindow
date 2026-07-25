@@ -63,6 +63,13 @@ export default function ProfileScreen() {
   const router = useRouter();
   const [user, setUser] = useState<usersService.AuthUser | null>(() => usersService.getUser());
   const [activeTab, setActiveTab] = useState<ProfileTab>('saved-events');
+  const [savedEvents, setSavedEvents] = useState<SavedUserEvent[]>([]);
+  const [isSavedEventsLoading, setIsSavedEventsLoading] = useState(true);
+  const [savedEventsError, setSavedEventsError] = useState('');
+  const [selectedSavedEvent, setSelectedSavedEvent] = useState<SavedUserEvent | null>(null);
+  const [userLat, setUserLat] = useState<number | null>(null);
+  const [userLon, setUserLon] = useState<number | null>(null);
+  const hasToken = Boolean(usersService.getToken());
 
   useEffect(() => {
     if (!usersService.getToken()) router.replace('/');
@@ -81,6 +88,67 @@ export default function ProfileScreen() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const location = await getOrRequestUserLocation();
+        if (cancelled || !location) return;
+        setUserLat(location.latitude);
+        setUserLon(location.longitude);
+      } catch {
+        if (cancelled) return;
+        setUserLat(null);
+        setUserLon(null);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const controller = new AbortController();
+
+    if (!hasToken) {
+      setIsSavedEventsLoading(false);
+      return () => controller.abort();
+    }
+
+    setIsSavedEventsLoading(true);
+    setSavedEventsError('');
+    fetchSavedUserEvents(controller.signal)
+      .then((events) => {
+        if (!cancelled) setSavedEvents(events);
+      })
+      .catch((err) => {
+        if (cancelled || (err instanceof Error && err.name === 'AbortError')) return;
+        setSavedEventsError(err instanceof Error ? err.message : 'Could not load saved events.');
+      })
+      .finally(() => {
+        if (!cancelled) setIsSavedEventsLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [hasToken, user?.user_id]);
+
+  const handleSavedEventUpdated = (updates: { event_comment?: string | null; event_rating?: number | null }) => {
+    if (!selectedSavedEvent) return;
+
+    setSelectedSavedEvent((current) => (current ? { ...current, ...updates } : current));
+    setSavedEvents((current) =>
+      current.map((event) =>
+        event.user_event_id === selectedSavedEvent.user_event_id ? { ...event, ...updates } : event
+      )
+    );
+  };
 
   const progressLabel = getUserLevelProgressLabel(user);
   const progressPercent = getUserLevelProgressPercent(user);
@@ -144,9 +212,26 @@ export default function ProfileScreen() {
         {activeTab === 'edit-profile' ? (
           <EditProfile user={user} onUserChange={setUser} />
         ) : (
-          <MySavedEvents user={user} />
+          <MySavedEvents
+            events={savedEvents}
+            error={savedEventsError}
+            hasToken={hasToken}
+            isLoading={isSavedEventsLoading}
+            onSelectEvent={setSelectedSavedEvent}
+          />
         )}
       </ScrollView>
+
+      {selectedSavedEvent ? (
+        <EventModal
+          event={selectedSavedEvent}
+          onClose={() => setSelectedSavedEvent(null)}
+          onSavedEventUpdated={handleSavedEventUpdated}
+          userId={user?.user_id ?? null}
+          userLat={userLat}
+          userLon={userLon}
+        />
+      ) : null}
     </SafeAreaView>
   );
 }
@@ -377,117 +462,52 @@ function EditProfile({
   );
 }
 
-function MySavedEvents({ user }: { user: usersService.AuthUser | null }) {
-  const [events, setEvents] = useState<SavedUserEvent[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [selectedEvent, setSelectedEvent] = useState<SavedUserEvent | null>(null);
-  const [userLat, setUserLat] = useState<number | null>(null);
-  const [userLon, setUserLon] = useState<number | null>(null);
-  const hasToken = Boolean(usersService.getToken());
-
-  const handleSavedEventUpdated = (updates: { event_comment?: string | null; event_rating?: number | null }) => {
-    if (!selectedEvent) return;
-    setSelectedEvent((current) => (current ? { ...current, ...updates } : current));
-    setEvents((current) =>
-      current.map((event) =>
-        event.user_event_id === selectedEvent.user_event_id ? { ...event, ...updates } : event
-      )
-    );
-  };
-
-  useEffect(() => {
-    let cancelled = false;
-
-    (async () => {
-      try {
-        const location = await getOrRequestUserLocation();
-        if (cancelled || !location) return;
-        if (cancelled) return;
-        setUserLat(location.latitude);
-        setUserLon(location.longitude);
-      } catch {
-        if (cancelled) return;
-        setUserLat(null);
-        setUserLon(null);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    const controller = new AbortController();
-
-    if (!hasToken) return () => controller.abort();
-
-    fetchSavedUserEvents(controller.signal)
-      .then((savedEvents) => {
-        if (!cancelled) setEvents(savedEvents);
-      })
-      .catch((err) => {
-        if (cancelled || (err instanceof Error && err.name === 'AbortError')) return;
-        setError(err instanceof Error ? err.message : 'Could not load saved events.');
-      })
-      .finally(() => {
-        if (!cancelled) setIsLoading(false);
-      });
-
-    return () => {
-      cancelled = true;
-      controller.abort();
-    };
-  }, [hasToken, user?.user_id]);
-
+function MySavedEvents({
+  events,
+  error,
+  hasToken,
+  isLoading,
+  onSelectEvent,
+}: {
+  events: SavedUserEvent[];
+  error: string;
+  hasToken: boolean;
+  isLoading: boolean;
+  onSelectEvent: (event: SavedUserEvent) => void;
+}) {
   return (
-    <>
-      <View style={styles.grid}>
-        <View style={[styles.panel, styles.fullPanel]}>
-          <Text style={styles.panelEyebrow}>MY SAVED EVENTS</Text>
-          <Text style={styles.panelCopy}>Events you saved from the events list.</Text>
+    <View style={styles.grid}>
+      <View style={[styles.panel, styles.fullPanel]}>
+        <Text style={styles.panelEyebrow}>MY SAVED EVENTS</Text>
+        <Text style={styles.panelCopy}>Events you saved from the events list.</Text>
 
-          {!hasToken ? (
-            <Text style={styles.errorText}>Log in to see your saved events.</Text>
-          ) : isLoading ? (
-            <View style={styles.loadingRow}>
-              <ActivityIndicator color={Palette.accent} />
-              <Text style={styles.loadingText}>Loading saved events...</Text>
-            </View>
-          ) : error ? (
-            <Text style={styles.errorText}>{error}</Text>
-          ) : events.length === 0 ? (
-            <View style={styles.emptyState}>
-              <Text style={styles.emptyTitle}>No saved events yet.</Text>
-              <Text style={styles.emptyCopy}>Save events from the Events page and they will appear here.</Text>
-            </View>
-          ) : (
-            <View style={styles.savedEventsList}>
-              {events.map((event) => (
-                <EventCard
-                  key={String(event.user_event_id)}
-                  event={event}
-                  onPress={(pressedEvent) => setSelectedEvent(pressedEvent as SavedUserEvent)}
-                />
-              ))}
-            </View>
-          )}
-        </View>
+        {!hasToken ? (
+          <Text style={styles.errorText}>Log in to see your saved events.</Text>
+        ) : isLoading ? (
+          <View style={styles.loadingRow}>
+            <ActivityIndicator color={Palette.accent} />
+            <Text style={styles.loadingText}>Loading saved events...</Text>
+          </View>
+        ) : error ? (
+          <Text style={styles.errorText}>{error}</Text>
+        ) : events.length === 0 ? (
+          <View style={styles.emptyState}>
+            <Text style={styles.emptyTitle}>No saved events yet.</Text>
+            <Text style={styles.emptyCopy}>Save events from the Events page and they will appear here.</Text>
+          </View>
+        ) : (
+          <View style={styles.savedEventsList}>
+            {events.map((event) => (
+              <EventCard
+                key={String(event.user_event_id)}
+                event={event}
+                onPress={(pressedEvent) => onSelectEvent(pressedEvent as SavedUserEvent)}
+              />
+            ))}
+          </View>
+        )}
       </View>
-
-      {selectedEvent ? (
-        <EventModal
-          event={selectedEvent}
-          onClose={() => setSelectedEvent(null)}
-          onSavedEventUpdated={handleSavedEventUpdated}
-          userId={user?.user_id ?? null}
-          userLat={userLat}
-          userLon={userLon}
-        />
-      ) : null}
-    </>
+    </View>
   );
 }
 
