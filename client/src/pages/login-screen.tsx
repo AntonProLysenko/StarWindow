@@ -11,6 +11,7 @@ import {
   Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { SymbolView } from 'expo-symbols';
 import { ShootingStar } from '@/components/shooting-star';
 import { SoundToggle } from '@/components/sound-toggle';
 import { Palette, Radius } from '@/constants/tokens';
@@ -30,6 +31,7 @@ const STARS = Array.from({ length: 150 }, (_, i) => ({
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [screen, setScreen] = useState(getScreen());
   const signInGlow = useRef(new Animated.Value(0)).current;
   const newUserGlow = useRef(new Animated.Value(0)).current;
@@ -157,17 +159,34 @@ export default function LoginScreen() {
               autoCorrect={false}
             />
 
-            <TextInput
-              style={[styles.input, { padding: inputPad }]}
-              placeholder="Password"
-              placeholderTextColor={Palette.textTertiary}
-              value={password}
-              onChangeText={(value) => {
-                setPassword(value);
-                setError('');
-              }}
-              secureTextEntry
-            />
+            <View style={styles.passwordInputWrap}>
+              <TextInput
+                style={[styles.passwordTextInput, { padding: inputPad }]}
+                placeholder="Password"
+                placeholderTextColor={Palette.textTertiary}
+                value={password}
+                onChangeText={(value) => {
+                  setPassword(value);
+                  setError('');
+                }}
+                secureTextEntry={!showPassword}
+              />
+              <TouchableOpacity
+                style={styles.passwordIconButton}
+                onPress={() => setShowPassword((visible) => !visible)}
+                activeOpacity={0.8}
+                accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}>
+                <SymbolView
+                  name={{
+                    ios: showPassword ? 'eye.slash.fill' : 'eye.fill',
+                    android: showPassword ? 'visibility_off' : 'visibility',
+                    web: showPassword ? 'visibility_off' : 'visibility',
+                  }}
+                  size={18}
+                  tintColor={Palette.textTertiary}
+                />
+              </TouchableOpacity>
+            </View>
 
             <TouchableOpacity style={styles.forgotRow}>
               <Text style={styles.forgot}>Forgot Password?</Text>
@@ -280,6 +299,27 @@ const styles = StyleSheet.create({
     color: Palette.textSecondary,
     fontSize: 13,
     marginBottom: 8,
+  },
+  passwordInputWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Palette.surface,
+    borderWidth: 1,
+    borderColor: Palette.border,
+    borderRadius: Radius.sm,
+    marginBottom: 8,
+  },
+  passwordTextInput: {
+    flex: 1,
+    color: Palette.textSecondary,
+    fontSize: 13,
+    outlineStyle: 'none' as any,
+  },
+  passwordIconButton: {
+    width: 42,
+    minHeight: dvh(40),
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   forgotRow: {
     alignSelf: 'flex-end',

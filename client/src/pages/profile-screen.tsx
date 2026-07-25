@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'expo-router';
+import { SymbolView } from 'expo-symbols';
 import {
   ActivityIndicator,
   Pressable,
@@ -247,6 +248,9 @@ function EditProfile({
   const [firstName, setFirstName] = useState(user?.f_name ?? '');
   const [lastName, setLastName] = useState(user?.l_name ?? '');
   const [email, setEmail] = useState(user?.email ?? '');
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmNewPassword, setConfirmNewPassword] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [message, setMessage] = useState('');
@@ -297,7 +301,8 @@ function EditProfile({
   const hasChanges =
     firstName.trim() !== (user?.f_name ?? '') ||
     lastName.trim() !== (user?.l_name ?? '') ||
-    email.trim().toLowerCase() !== (user?.email ?? '').toLowerCase();
+    email.trim().toLowerCase() !== (user?.email ?? '').toLowerCase() ||
+    Boolean(newPassword || confirmNewPassword);
   const hasPreferenceChanges = !sameIds(selectedEventTypeIds, savedEventTypeIds);
 
   const handleSave = async () => {
@@ -305,6 +310,27 @@ function EditProfile({
       setError('First name, last name, and email are required.');
       setMessage('');
       return;
+    }
+
+    if (!currentPassword.trim()) {
+      setError('Current password is required to save account changes.');
+      setMessage('');
+      return;
+    }
+
+    if (newPassword || confirmNewPassword) {
+      const passwordError = usersService.getPasswordValidationError(newPassword);
+      if (passwordError) {
+        setError(passwordError);
+        setMessage('');
+        return;
+      }
+
+      if (newPassword !== confirmNewPassword) {
+        setError('Passwords do not match.');
+        setMessage('');
+        return;
+      }
     }
 
     setIsSaving(true);
@@ -316,9 +342,15 @@ function EditProfile({
         f_name: firstName.trim(),
         l_name: lastName.trim(),
         email: email.trim(),
+        current_password: currentPassword.trim(),
+        new_password: newPassword ? newPassword : null,
+        confirm_new_password: confirmNewPassword ? confirmNewPassword : null,
       });
       onUserChange(updatedUser);
-      setMessage('Profile updated.');
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmNewPassword('');
+      setMessage(newPassword ? 'Profile and password updated.' : 'Profile updated.');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not update profile.');
     } finally {
@@ -330,6 +362,9 @@ function EditProfile({
     setFirstName(user?.f_name ?? '');
     setLastName(user?.l_name ?? '');
     setEmail(user?.email ?? '');
+    setCurrentPassword('');
+    setNewPassword('');
+    setConfirmNewPassword('');
     setError('');
     setMessage('');
   };
@@ -378,6 +413,13 @@ function EditProfile({
           </View>
         ) : (
           <>
+            <ProfileField
+              label="Current Password"
+              value={currentPassword}
+              onChangeText={setCurrentPassword}
+              autoCapitalize="none"
+              secureTextEntry
+            />
             <ProfileField label="First Name" value={firstName} onChangeText={setFirstName} autoCapitalize="words" />
             <ProfileField label="Last Name" value={lastName} onChangeText={setLastName} autoCapitalize="words" />
             <ProfileField
@@ -386,6 +428,20 @@ function EditProfile({
               onChangeText={setEmail}
               autoCapitalize="none"
               keyboardType="email-address"
+            />
+            <ProfileField
+              label="New Password"
+              value={newPassword}
+              onChangeText={setNewPassword}
+              autoCapitalize="none"
+              secureTextEntry
+            />
+            <ProfileField
+              label="Confirm New Password"
+              value={confirmNewPassword}
+              onChangeText={setConfirmNewPassword}
+              autoCapitalize="none"
+              secureTextEntry
             />
 
             {!!error && <Text style={styles.errorText}>{error}</Text>}
@@ -517,25 +573,59 @@ function ProfileField({
   onChangeText,
   autoCapitalize,
   keyboardType,
+  secureTextEntry,
 }: {
   label: string;
   value: string;
   onChangeText: (value: string) => void;
   autoCapitalize?: 'none' | 'sentences' | 'words' | 'characters';
   keyboardType?: 'default' | 'email-address';
+  secureTextEntry?: boolean;
 }) {
+  const [isPasswordVisible, setIsPasswordVisible] = useState(false);
+  const shouldMaskInput = Boolean(secureTextEntry && !isPasswordVisible);
+
   return (
     <View style={styles.field}>
       <Text style={styles.fieldLabel}>{label}</Text>
-      <TextInput
-        style={styles.input}
-        value={value}
-        onChangeText={onChangeText}
-        placeholderTextColor={Palette.textTertiary}
-        autoCapitalize={autoCapitalize}
-        keyboardType={keyboardType}
-        autoCorrect={false}
-      />
+      {secureTextEntry ? (
+        <View style={styles.passwordInputWrap}>
+          <TextInput
+            style={styles.passwordTextInput}
+            value={value}
+            onChangeText={onChangeText}
+            placeholderTextColor={Palette.textTertiary}
+            autoCapitalize={autoCapitalize}
+            keyboardType={keyboardType}
+            secureTextEntry={shouldMaskInput}
+            autoCorrect={false}
+          />
+          <Pressable
+            style={styles.passwordIconButton}
+            onPress={() => setIsPasswordVisible((visible) => !visible)}
+            aria-label={isPasswordVisible ? `Hide ${label}` : `Show ${label}`}>
+            <SymbolView
+              name={{
+                ios: isPasswordVisible ? 'eye.slash.fill' : 'eye.fill',
+                android: isPasswordVisible ? 'visibility_off' : 'visibility',
+                web: isPasswordVisible ? 'visibility_off' : 'visibility',
+              }}
+              size={18}
+              tintColor={Palette.textTertiary}
+            />
+          </Pressable>
+        </View>
+      ) : (
+        <TextInput
+          style={styles.input}
+          value={value}
+          onChangeText={onChangeText}
+          placeholderTextColor={Palette.textTertiary}
+          autoCapitalize={autoCapitalize}
+          keyboardType={keyboardType}
+          autoCorrect={false}
+        />
+      )}
     </View>
   );
 }
@@ -714,6 +804,29 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     fontSize: 15,
     outlineStyle: 'none' as any,
+  },
+  passwordInputWrap: {
+    minHeight: dvh(46),
+    borderWidth: 1,
+    borderColor: Palette.border,
+    borderRadius: Radius.sm,
+    backgroundColor: Palette.surface,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  passwordTextInput: {
+    flex: 1,
+    color: Palette.textPrimary,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    fontSize: 15,
+    outlineStyle: 'none' as any,
+  },
+  passwordIconButton: {
+    width: 44,
+    minHeight: dvh(44),
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   actionRow: {
     flexDirection: 'row',
