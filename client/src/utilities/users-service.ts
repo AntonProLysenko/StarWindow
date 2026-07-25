@@ -42,7 +42,6 @@ export interface SignUpData {
   l_name: string;
   email: string;
   password: string;
-  status_id?: number;
 }
 
 export interface LoginCredentials {

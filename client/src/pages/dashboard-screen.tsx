@@ -37,7 +37,7 @@ import { fetchIssPasses, type IssPass } from '@/utilities/iss-api';
 import { fetchNearestLocation } from '@/utilities/location-api';
 import { fetchMoonPhase } from '@/utilities/moon-api';
 import { fetchNasaNews, type NewsArticle } from '@/utilities/news-api';
-import { fetchViewingScore } from '@/utilities/viewing-score-api';
+import { fetchViewingScore, type ViewingScoreResponse } from '@/utilities/viewing-score-api';
 import { fetchCurrentWeather, type WeatherResponse } from '@/utilities/weather-api';
 import { getUserLevelProgressLabel, getUserLevelProgressPercent } from '@/utilities/level-progress';
 import { getOrRequestUserLocation } from '@/utilities/user-location-service';
@@ -536,6 +536,7 @@ export default function DashboardScreen({ locked = false }: DashboardScreenProps
   const [moonPhaseDate, setMoonPhaseDate] = useState<string | null>(null);
   const [moonPhaseName, setMoonPhaseName] = useState('Waiting for location...');
   const [viewingScore, setViewingScore] = useState<number | null>(null);
+  const [viewingScoreInputs, setViewingScoreInputs] = useState<ViewingScoreResponse['inputs'] | null>(null);
   const [viewingScoreStatus, setViewingScoreStatus] = useState<ViewingScoreStatus>('loading');
   const [nextLaunch, setNextLaunch] = useState<UpcomingLaunch | null>(null);
   const [isLaunchLoading, setIsLaunchLoading] = useState(true);
@@ -684,11 +685,13 @@ export default function DashboardScreen({ locked = false }: DashboardScreenProps
         const score = await fetchViewingScore(coords);
         if (!isMounted) return;
         setViewingScore(score.viewing_score ?? null);
+        setViewingScoreInputs(score.inputs ?? null);
         setViewingScoreStatus(score.viewing_score == null ? 'unavailable' : 'ready');
       } catch (error) {
         console.log('Viewing score fetch error:', error);
         if (isMounted) {
           setViewingScore(null);
+          setViewingScoreInputs(null);
           setViewingScoreStatus('unavailable');
         }
       }
@@ -755,6 +758,7 @@ export default function DashboardScreen({ locked = false }: DashboardScreenProps
         if (!coords) {
           setBrowserCoords(null);
           setViewingScore(null);
+          setViewingScoreInputs(null);
           setViewingScoreStatus('location-required');
           setLocationLabel(LOCATION_REQUIRED_LABEL);
           setLocationMessage(LOCATION_SETTINGS_MESSAGE);
@@ -810,6 +814,7 @@ export default function DashboardScreen({ locked = false }: DashboardScreenProps
         if (!isMounted) return;
         setBrowserCoords(null);
         setViewingScore(null);
+        setViewingScoreInputs(null);
         setViewingScoreStatus('unavailable');
         setLocationLabel(LOCATION_REQUIRED_LABEL);
         setLocationMessage(LOCATION_SETTINGS_MESSAGE);
@@ -890,6 +895,10 @@ export default function DashboardScreen({ locked = false }: DashboardScreenProps
               </View>
             )}
           </View>
+
+          {!isLocked && viewingScoreStatus === 'ready' && viewingScoreInputs ? (
+            <ViewingScoreBreakdown score={viewingScore} inputs={viewingScoreInputs} />
+          ) : null}
 
 {/*
           <SectionLabel text="ACCOUNT" /> */}
@@ -1170,6 +1179,73 @@ function Stat({ label, value }: { label: string; value: string }) {
     <View>
       <Text style={styles.statLabel}>{label}</Text>
       <Text style={styles.statValue}>{value}</Text>
+    </View>
+  );
+}
+
+/** Plain-language sky-darkness class for a Bortle-like light-pollution level. */
+function bortleLabel(level: number): string {
+  if (level <= 2) return 'excellent dark sky';
+  if (level <= 3) return 'rural sky';
+  if (level <= 4) return 'rural / suburban';
+  if (level <= 5) return 'suburban sky';
+  if (level <= 6) return 'bright suburban';
+  if (level <= 7) return 'suburban / urban';
+  if (level <= 8) return 'city sky';
+  return 'inner-city sky';
+}
+
+/**
+ * Breakdown of the (time-gated) viewing score: what's driving it right now —
+ * time of day, cloud cover, and light pollution.
+ */
+function ViewingScoreBreakdown({
+  score,
+  inputs,
+}: {
+  score: number | null;
+  inputs: NonNullable<ViewingScoreResponse['inputs']>;
+}) {
+  const darkness = inputs.darkness_factor ?? null;
+  const clouds = inputs.clouds_pct ?? null;
+  const light = inputs.light_pollution_level ?? null;
+
+  const timeText =
+    darkness == null
+      ? '--'
+      : darkness <= 0
+        ? 'Daytime — sun is up'
+        : darkness < 1
+          ? 'Twilight — sun near horizon'
+          : 'Dark — good for viewing';
+
+  // Lead with whatever is hurting the score the most.
+  const why =
+    darkness != null && darkness <= 0
+      ? "It's daytime where you are — the sun is up, so the score stays at 0 until after dark."
+      : darkness != null && darkness < 1
+        ? 'The sun is near the horizon; the score climbs as the sky darkens.'
+        : clouds != null && clouds >= 60
+          ? 'Heavy cloud cover is the main drag on tonight’s score.'
+          : light != null && light >= 6
+            ? 'Bright local light pollution is limiting your score tonight.'
+            : 'Here’s what’s shaping your score right now.';
+
+  return (
+    <View style={styles.scoreBreakdown}>
+      <View style={styles.scoreBreakdownHeader}>
+        <Text style={styles.scoreBreakdownLabel}>VIEWING SCORE</Text>
+        <Text style={styles.scoreBreakdownValue}>{score ?? '--'}</Text>
+      </View>
+      <Text style={styles.scoreBreakdownWhy}>{why}</Text>
+      <View style={styles.scoreBreakdownRow}>
+        <Stat label="TIME OF DAY" value={timeText} />
+        <Stat label="CLOUD COVER" value={clouds != null ? `${Math.round(clouds)}%` : '--'} />
+        <Stat
+          label="LIGHT POLLUTION"
+          value={light != null ? `Bortle ~${Math.round(light)} · ${bortleLabel(light)}` : '--'}
+        />
+      </View>
     </View>
   );
 }
@@ -1768,6 +1844,42 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 19,
     color: Palette.textSecondary,
+  },
+  scoreBreakdown: {
+    backgroundColor: Palette.surface,
+    borderWidth: 1,
+    borderColor: Palette.border,
+    borderRadius: Radius.md,
+    padding: Spacing.md,
+    gap: Spacing.sm,
+    marginBottom: Spacing.md,
+  },
+  scoreBreakdownHeader: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
+  },
+  scoreBreakdownLabel: {
+    fontSize: 12,
+    color: Palette.textTertiary,
+    letterSpacing: 1,
+    fontWeight: '700',
+  },
+  scoreBreakdownValue: {
+    fontSize: 28,
+    color: Palette.accent,
+    fontWeight: '700',
+  },
+  scoreBreakdownWhy: {
+    fontSize: 13,
+    lineHeight: 18,
+    color: Palette.textSecondary,
+  },
+  scoreBreakdownRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    rowGap: Spacing.sm,
+    columnGap: Spacing.lg,
   },
   statLabel: {
     fontSize: 10,

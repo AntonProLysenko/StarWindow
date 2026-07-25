@@ -2,10 +2,11 @@ const express = require('express');
 const router = express.Router();
 const usersCtrl = require('../../controllers/api/users');
 const ensureLoggedIn = require('../../config/ensureLoggedIn');
+const { authLimiter } = require('../../middleware/rateLimit');
 
-router.post('/', usersCtrl.create);
-router.post('/signup', usersCtrl.create);
-router.post('/login', usersCtrl.login);
+// Strict rate limit on the unauthenticated auth endpoints (credential brute force).
+router.post('/', authLimiter, usersCtrl.create);
+router.post('/login', authLimiter, usersCtrl.login);
 router.get('/me', ensureLoggedIn, usersCtrl.me);
 router.put('/me', ensureLoggedIn, usersCtrl.updateMe);
 router.get('/check-token', ensureLoggedIn, usersCtrl.checkToken);

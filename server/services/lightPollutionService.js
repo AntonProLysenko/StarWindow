@@ -1,43 +1,76 @@
 // ============================================================================
-//  ⚠️  KEY DEPENDENCY TO VERIFY — light pollution at arbitrary coordinates
+//  Light pollution at arbitrary coordinates — real VIIRS-derived data
 // ============================================================================
 //
 // getLightPollutionAt(lat, lon) returns a Bortle-like level 0 (pristine dark
 // sky) .. 9 (inner-city), which feeds scoreService.calculateViewingScore().
 //
-// The RIGHT source is VIIRS VNL (Visible Infrared Imaging Radiometer Suite,
-// nighttime-lights) radiance. Reading it server-side is NOT plug-and-play:
+// SOURCE: David J. Lorenz's 2024 light-pollution atlas tiles
+//   (https://djlorenz.github.io/astronomy/lp/), computed from NASA VIIRS
+//   nighttime-lights radiance. These are the SAME tiles the frontend map
+//   overlays (see client star-map.impl.web.tsx), so the viewing score and the
+//   on-map overlay agree.
 //
-//   Option A — raw raster (most accurate):
-//     Download the annual VIIRS VNL GeoTIFF (global, ~a few GB) from NOAA/EOG
-//     (https://eogdata.mines.edu/products/vnl/). Sample the pixel at (lat, lon)
-//     with a raster lib — e.g. `geotiff` (pure JS) or `gdal-async` (native).
-//     Then map radiance (nW/cm²/sr) → Bortle via a calibration curve.
-//     Cost: the GeoTIFF is large; native GDAL needs build tooling on Windows.
+// HOW: the atlas is a pyramid of 1024px PNG tiles addressed as
+//   .../tiles2024/tile_{z}_{x}_{y}.png, with 2^z tiles per axis (Web Mercator).
+//   We compute the tile + pixel covering (lat, lon), read the pixel colour, and
+//   nearest-match it to Lorenz's discrete zone palette (sampled from his
+//   colorbar.png legend — see ZONE_PALETTE). Each zone maps to a Bortle-like
+//   level. Tiles are lossless flat-colour PNGs, so the match is exact.
 //
-//   Option B — pre-rendered tiles (what the FRONTEND already uses):
-//     The map overlays David Lorenz's tiles
-//     (djlorenz.github.io/astronomy/image_tiles/...). We *could* fetch the tile
-//     covering (lat, lon) server-side and read the pixel color, but that's a
-//     lossy round-trip (color→brightness) and rate-limited.
-//
-//   Option C — a lookup API (simplest, if one fits the budget):
-//     e.g. lightpollutionmap.info / a self-hosted tile pixel service.
-//
-// >>> Until one of the above is wired up, the ACTIVE implementation below is a
-//     HEURISTIC FALLBACK: a city-glow model where darkness increases with
-//     distance from major cities. It is good enough to demo and to make the
-//     "best nearby spot" search move you away from cities, but the absolute
-//     numbers are NOT real measurements. Replace `fallbackCityGlowLevel` with a
-//     real VIIRS read before trusting the scores. <<<
-//
+// If a tile read fails (network error), getLightPollutionAt falls back to the
+// city-glow heuristic below so the best-spot search never breaks.
 // ============================================================================
 
+const { PNG } = require("pngjs");
 const { haversineMiles } = require("../utils/geo");
 
-// Set to true once a real VIIRS/raster/API path (readViirsLevel) is implemented
-// and verified in your environment. While false, we use the fallback.
-const VIIRS_ENABLED = false;
+// Real VIIRS reads are live. Set false to force the heuristic fallback.
+const VIIRS_ENABLED = true;
+
+const TILE_BASE = "https://djlorenz.github.io/astronomy/image_tiles/tiles2024";
+const TILE_SIZE = 1024;
+// Primary tile-zoom to read. z6 is ~0.6 km/px — far finer than the score needs,
+// and each tile covers ~390 mi so a best-spot search's 33 samples share 1-2
+// tiles. We fall back to shallower zooms only where a deeper tile is absent
+// (e.g. coastlines); z0-z2 exist globally so a read always resolves.
+const VIIRS_ZOOM = 6;
+const VIIRS_MIN_ZOOM = 2;
+// Web Mercator is undefined past ~85.05°; clamp to stay inside the projection.
+const MERCATOR_MAX_LAT = 85.05112878;
+// Missing tile (ocean / no data) => darkest real sky.
+const NO_DATA_LEVEL = 1.0;
+
+// Zone palette sampled directly from Lorenz's colorbar.png legend, darkest ->
+// brightest: [r, g, b, level]. Zones 1a..7b (gray -> blue -> green -> yellow ->
+// orange -> red -> white) plus black (below zone 1 / no data). `level` is a
+// Bortle-like 0..9 anchored on Lorenz's own zone/Bortle notes (green zone 3
+// ~ Bortle 4, yellow zone 4 ~ Bortle 5, orange zone 5 ~ Bortle 6).
+const ZONE_PALETTE = [
+  [0, 0, 0, 1.0], // black — below zone 1 / no data
+  [34, 34, 34, 2.0], // 1a
+  [66, 66, 66, 2.5], // 1b
+  [20, 47, 114, 3.0], // 2a
+  [33, 84, 216, 3.5], // 2b
+  [15, 87, 20, 4.0], // 3a
+  [31, 161, 42, 4.5], // 3b
+  [110, 100, 30, 5.0], // 4a
+  [184, 166, 37, 5.5], // 4b
+  [191, 100, 30, 6.0], // 5a
+  [253, 150, 80, 6.5], // 5b
+  [251, 90, 73, 7.0], // 6a
+  [251, 153, 138, 7.5], // 6b
+  [160, 160, 160, 8.5], // 7a
+  [242, 242, 242, 9.0], // 7b
+];
+
+// Decoded-tile cache: "z/x/y" -> Promise<{ width, levels } | null>. Levels are a
+// Uint8Array of round(level * 2) (one byte/px, ~1 MB/tile) — far lighter than
+// the 4 MB RGBA buffer. Caching the Promise dedupes the concurrent reads the
+// best-spot search fires for one tile. Tiles are immutable annual data, so
+// entries never go stale; we bound the count with simple LRU eviction.
+const MAX_CACHED_TILES = 32;
+const tileCache = new Map();
 
 /**
  * Light pollution level at a coordinate, 0 (darkest) .. 9 (brightest).
@@ -51,8 +84,8 @@ async function getLightPollutionAt(lat, lon) {
       const level = await readViirsLevel(lat, lon);
       if (Number.isFinite(level)) return clampLevel(level);
     } catch (err) {
-      // Never let a raster/API hiccup break the whole best-spot search — fall
-      // back to the heuristic and log it.
+      // Never let a network hiccup break the whole best-spot search — fall back
+      // to the heuristic and log it.
       console.warn("VIIRS lookup failed, using city-glow fallback:", err.message);
     }
   }
@@ -60,27 +93,121 @@ async function getLightPollutionAt(lat, lon) {
 }
 
 /**
- * TODO(VIIRS): implement a real read here and flip VIIRS_ENABLED to true.
- * Expected to return a Bortle-like 0..9 (or radiance you then calibrate).
- * See Options A/B/C in the header. Left unimplemented on purpose so it's an
- * explicit, greppable TODO rather than a silent stub.
+ * Read the VIIRS-derived level from Lorenz's tiles. Tries the primary zoom, then
+ * shallower zooms where a deeper tile is absent. Returns NO_DATA_LEVEL if even
+ * the shallowest tile is missing (ocean). Throws only on a real fetch/decode
+ * failure so the caller can fall back.
+ * @param {number} lat
+ * @param {number} lon
+ * @returns {Promise<number>}
  */
-async function readViirsLevel(/* lat, lon */) {
-  throw new Error("readViirsLevel not implemented — see TODO(VIIRS) in lightPollutionService.js");
+async function readViirsLevel(lat, lon) {
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+    throw new Error(`invalid coordinate ${lat},${lon}`);
+  }
+
+  for (let z = VIIRS_ZOOM; z >= VIIRS_MIN_ZOOM; z--) {
+    const { tileX, tileY, pxX, pxY } = tileCoords(lat, lon, z);
+    const tile = await getTile(z, tileX, tileY);
+    if (!tile) continue; // no tile at this zoom — try shallower
+    return tile.levels[pxY * tile.width + pxX] / 2;
+  }
+
+  return NO_DATA_LEVEL;
+}
+
+/** Map (lat, lon) -> tile indices + pixel within the tile at tile-zoom z. */
+function tileCoords(lat, lon, z) {
+  const clampedLat = Math.max(-MERCATOR_MAX_LAT, Math.min(MERCATOR_MAX_LAT, lat));
+  const globalPx = TILE_SIZE * 2 ** z;
+
+  const x = ((lon + 180) / 360) * globalPx;
+  const latRad = (clampedLat * Math.PI) / 180;
+  const y =
+    ((1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2) *
+    globalPx;
+
+  const clampPx = (v) => Math.max(0, Math.min(globalPx - 1, Math.floor(v)));
+  const gx = clampPx(x);
+  const gy = clampPx(y);
+
+  return {
+    tileX: Math.floor(gx / TILE_SIZE),
+    tileY: Math.floor(gy / TILE_SIZE),
+    pxX: gx % TILE_SIZE,
+    pxY: gy % TILE_SIZE,
+  };
+}
+
+/** Get a decoded tile's level map, from cache or by fetching + decoding. */
+function getTile(z, x, y) {
+  const key = `${z}/${x}/${y}`;
+
+  const cached = tileCache.get(key);
+  if (cached) {
+    tileCache.delete(key); // refresh LRU position
+    tileCache.set(key, cached);
+    return cached;
+  }
+
+  const pending = fetchAndDecodeTile(z, x, y).catch((err) => {
+    // Don't cache transient failures — drop the entry so the next call retries,
+    // then rethrow so getLightPollutionAt falls back for this point.
+    tileCache.delete(key);
+    throw err;
+  });
+
+  tileCache.set(key, pending);
+  while (tileCache.size > MAX_CACHED_TILES) {
+    tileCache.delete(tileCache.keys().next().value); // evict oldest
+  }
+  return pending;
+}
+
+/**
+ * Fetch a tile PNG and reduce it to a per-pixel level map. Resolves null for a
+ * genuinely missing tile (HTTP 404 = no data at this zoom).
+ * @returns {Promise<{ width:number, levels:Uint8Array } | null>}
+ */
+async function fetchAndDecodeTile(z, x, y) {
+  const res = await fetch(`${TILE_BASE}/tile_${z}_${x}_${y}.png`);
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`tile ${z}/${x}/${y} HTTP ${res.status}`);
+
+  const png = PNG.sync.read(Buffer.from(await res.arrayBuffer()));
+  const { width, height, data } = png;
+  const levels = new Uint8Array(width * height);
+
+  for (let p = 0; p < width * height; p++) {
+    const i = p << 2;
+    levels[p] = Math.round(nearestZoneLevel(data[i], data[i + 1], data[i + 2]) * 2);
+  }
+
+  return { width, levels };
+}
+
+/** Nearest zone level (0..9) to an RGB pixel by squared Euclidean distance. */
+function nearestZoneLevel(r, g, b) {
+  let bestLevel = ZONE_PALETTE[0][3];
+  let bestDist = Infinity;
+  for (const [pr, pg, pb, level] of ZONE_PALETTE) {
+    const d = (pr - r) ** 2 + (pg - g) ** 2 + (pb - b) ** 2;
+    if (d < bestDist) {
+      bestDist = d;
+      bestLevel = level;
+    }
+  }
+  return bestLevel;
 }
 
 // ---------------------------------------------------------------------------
-// Fallback heuristic: superposed city glow (inverse-square-ish falloff).
-//
-// Each city contributes brightness ∝ weight / (1 + (d/scale)²). Summing across
-// nearby cities gives a smooth field that's bright in/near metros and fades to
-// dark in the countryside. We then map total brightness → 0..9. Purely a
-// stand-in; farther from cities = darker, which is the property the search
-// needs. NOT a measurement.
+// Fallback heuristic: superposed city glow (inverse-square-ish falloff). Used
+// only if a VIIRS tile read errors out. Each city contributes brightness ∝
+// weight / (1 + (d/scale)²); summing gives a smooth field, bright near metros
+// and fading to dark in the countryside. NOT a measurement.
 // ---------------------------------------------------------------------------
 
 // A small set of major US cities: [name, lat, lon, weight ~ log10(population)].
-// Extend/replace freely — this only shapes the fallback field.
 const MAJOR_CITIES = [
   ["New York", 40.7128, -74.006, 7.3],
   ["Los Angeles", 34.0522, -118.2437, 7.0],
@@ -135,6 +262,7 @@ function clampLevel(level) {
 
 module.exports = {
   getLightPollutionAt,
+  readViirsLevel,
   // exported for the conceptual demo / tests:
   fallbackCityGlowLevel,
   VIIRS_ENABLED,

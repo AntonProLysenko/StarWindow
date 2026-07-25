@@ -13,15 +13,17 @@ const launchService = require("./launchService");
 const eventService = require("./eventService");
 const astronomyService = require("./astronomyService");
 const scoreService = require("./scoreService");
+const { getLightPollutionAt } = require("./lightPollutionService");
+const { sunAltitudeDeg } = require("../utils/sun");
 
 /**
  * @param {object} opts
  * @param {number} opts.lat
  * @param {number} opts.lon
- * @param {number} [opts.lightPollutionLevel=5] - Bortle-like 0..9 for the score.
+ * @param {number} [opts.lightPollutionLevel] - override; otherwise read from VIIRS.
  * @returns {Promise<object>} combined payload + viewing_score.
  */
-async function getSummary({ lat, lon, lightPollutionLevel = 5 }) {
+async function getSummary({ lat, lon, lightPollutionLevel }) {
   console.log(`\n=== BUILDING SUMMARY for (${lat}, ${lon}) ===`);
 
   // 1) Resolve (or create) the location these results belong to.
@@ -40,13 +42,21 @@ async function getSummary({ lat, lon, lightPollutionLevel = 5 }) {
     ),
   ]);
 
-  // 3) Compute the viewing score from the weather result (when available).
+  // 3) Compute the viewing score from the weather result (when available),
+  //    using the REAL VIIRS light pollution and the sun's altitude (darkness).
   let viewing_score = null;
+  let light_pollution_level =
+    lightPollutionLevel != null ? Number(lightPollutionLevel) : null;
   if (weather && !weather.error) {
+    if (light_pollution_level == null) {
+      light_pollution_level = await getLightPollutionAt(lat, lon);
+    }
+    const darkness = scoreService.darknessFactor(sunAltitudeDeg(lat, lon));
     viewing_score = scoreService.calculateViewingScore(
       Number(weather.clouds_pct ?? 100), // no data => assume fully clouded
       Number(weather.visibility_m ?? 0),
-      lightPollutionLevel
+      Number(light_pollution_level),
+      { darkness, logContext: `/api/score/summary (${lat}, ${lon})` }
     );
   }
 
@@ -59,7 +69,7 @@ async function getSummary({ lat, lon, lightPollutionLevel = 5 }) {
       country: location.country,
     },
     viewing_score,
-    light_pollution_level: lightPollutionLevel,
+    light_pollution_level,
     weather,
     iss,
     launches,

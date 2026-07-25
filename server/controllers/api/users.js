@@ -2,7 +2,6 @@ const User = require('../../models/user');
 const EventType = require('../../models/eventType');
 const levelingQueries = require('../../db/queries/leveling');
 const jwt = require('jsonwebtoken');
-const bcrypt = require('bcryptjs');
 
 module.exports = {
   create,
@@ -16,59 +15,67 @@ module.exports = {
   getPointHistory,
 };
 
+// Send an error response without leaking internals. The full error is logged
+// server-side; the client only sees the message for intentional 4xx errors (the
+// ones we throw with an `error.status`), never raw error text or Postgres codes.
+function sendError(res, err, context) {
+  console.error(context, err);
+  const status = err.status || 500;
+  const message =
+    status >= 400 && status < 500
+      ? err.message
+      : "Something went wrong. Please try again.";
+  res.status(status).json({ error: message, status });
+}
+
 async function create(req, res) {
   try {
     const user = await User.create(req.body);
-    const token = createJWT(user);
-    console.log(`created user ${user.email}`);
-    res.json(token);
+    res.json(createJWT(user));
   } catch (err) {
-    console.error('POST /api/users (signup) failed:', err);
-    res.status(400).json({ error: err.message, code: err.code });
+    sendError(res, err, "POST /api/users (signup) failed:");
   }
 }
 
 async function login(req, res) {
   try {
     const user = await User.findOne({ email: req.body.email });
-    if (!user) return res.status(401).json({ error: 'Invalid email' });
+    // Same response and timing whether the email is unknown or the password is
+    // wrong (verifyPassword runs a bcrypt compare even when user is null), so
+    // the endpoint can't be used to enumerate registered emails.
+    const match = await User.verifyPassword(user, req.body.password);
+    if (!user || !match) {
+      return res.status(401).json({ error: "Invalid email or password", status: 401 });
+    }
 
-    const match = await bcrypt.compare(req.body.password, user.password);
-    if (!match) return res.status(401).json({ error: 'Invalid email or password' });
-
-    console.log(`user ${user.email} logs in`);
     res.json(createJWT(user));
   } catch (err) {
-    console.error('POST /api/users/login failed:', err);
-    res.status(400).json({ error: err.message, code: err.code });
+    sendError(res, err, "POST /api/users/login failed:");
   }
 }
 
 async function me(req, res) {
   try {
     const user = await User.findById(req.user.user_id);
-    if (!user) return res.status(404).json({ error: "User not found" });
+    if (!user) return res.status(404).json({ error: "User not found", status: 404 });
     const level = await levelingQueries.getUserLevelSummary(req.user.user_id);
     res.json({ ...user, level });
   } catch (err) {
-    console.error("GET /api/users/me failed:", err);
-    res.status(400).json({ error: err.message, code: err.code });
+    sendError(res, err, "GET /api/users/me failed:");
   }
 }
 
 async function updateMe(req, res) {
   try {
     const user = await User.updateProfile(req.user.user_id, req.body);
-    if (!user) return res.status(404).json({ error: "User not found" });
+    if (!user) return res.status(404).json({ error: "User not found", status: 404 });
     res.json(createJWT(user));
   } catch (err) {
-    console.error("PUT /api/users/me failed:", err);
-    res.status(400).json({ error: err.message, code: err.code });
+    sendError(res, err, "PUT /api/users/me failed:");
   }
 }
 
 function checkToken(req, res) {
-  console.log('req.user', req.user);
   res.json(req.exp);
 }
 
@@ -77,7 +84,7 @@ async function getEventTypes(req, res) {
     const eventTypeIds = await EventType.getForUser(req.user.user_id);
     res.json({ eventTypeIds });
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    sendError(res, err, "GET /api/users/event-types failed:");
   }
 }
 
@@ -87,17 +94,17 @@ async function updateEventTypes(req, res) {
     const savedEventTypeIds = await EventType.replaceForUser(req.user.user_id, eventTypeIds);
     res.json({ eventTypeIds: savedEventTypeIds });
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    sendError(res, err, "PUT /api/users/event-types failed:");
   }
 }
 
 async function getLevelSummary(req, res) {
   try {
     const level = await levelingQueries.getUserLevelSummary(req.user.user_id);
-    if (!level) return res.status(404).json({ error: "User level not found" });
+    if (!level) return res.status(404).json({ error: "User level not found", status: 404 });
     res.json(level);
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    sendError(res, err, "GET /api/users/level failed:");
   }
 }
 
@@ -106,7 +113,7 @@ async function getPointHistory(req, res) {
     const history = await levelingQueries.getUserPointHistory(req.user.user_id, req.query.limit);
     res.json(history);
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    sendError(res, err, "GET /api/users/points/history failed:");
   }
 }
 
