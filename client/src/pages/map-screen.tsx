@@ -130,6 +130,7 @@ export default function MapScreen() {
   return (
     <ScrollView
       style={styles.scrollView}
+      scrollEnabled={Platform.OS !== 'web'}
       contentInset={insets}
       contentContainerStyle={[styles.contentContainer, contentPlatformStyle]}>
       <View style={styles.container}>
