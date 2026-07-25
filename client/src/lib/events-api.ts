@@ -48,6 +48,7 @@ export interface EventListItem {
   webcast_live: boolean;
   video_url: string | null;
   launch_details: LaunchDetails | null;
+  user_event_images?: SavedUserEventImage[];
 }
 
 export interface SavedUserEvent extends EventListItem {
@@ -140,6 +141,7 @@ export async function checkEventSaved(
   user_event_id: string | null;
   event_comment: string | null;
   event_rating: number | null;
+  user_event_images: SavedUserEventImage[];
 }> {
   const params = new URLSearchParams({ event_id: String(eventId) });
   return sendRequest<null, {
@@ -147,6 +149,7 @@ export async function checkEventSaved(
     user_event_id: string | null;
     event_comment: string | null;
     event_rating: number | null;
+    user_event_images: SavedUserEventImage[];
   }>(`${API_BASE}/api/user-events?${params}`, 'GET', null, { signal });
 }
 

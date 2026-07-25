@@ -21,6 +21,7 @@ router.get("/", ensureLoggedIn, async (req, res) => {
       user_event_id: row?.user_event_id ?? null,
       event_comment: row?.event_comment ?? null,
       event_rating: row?.event_rating ?? null,
+      user_event_images: row?.user_event_images ?? [],
     });
   } catch (error) {
     const status = error.status || 500;

@@ -140,7 +140,29 @@ async function deleteUserEvent(userEventId, userId = null) {
  */
 async function getUserEvent(userId, eventId) {
   const result = await database.query(
-    "SELECT user_event_id, event_comment, event_rating FROM public.user_events WHERE user_id = $1 AND event_id = $2 LIMIT 1",
+    `
+      SELECT
+        ue.user_event_id,
+        ue.event_comment,
+        ue.event_rating,
+        COALESCE((
+          SELECT json_agg(
+            json_build_object(
+              'user_event_image_id', uei.user_event_image_id,
+              'image_url', uei.image_url,
+              'caption', uei.caption,
+              'created_at', uei.created_at
+            )
+            ORDER BY uei.created_at DESC, uei.user_event_image_id DESC
+          )
+          FROM public.user_event_images uei
+          WHERE uei.user_event_id = ue.user_event_id
+        ), '[]'::json) AS user_event_images
+      FROM public.user_events ue
+      WHERE ue.user_id = $1
+        AND ue.event_id = $2
+      LIMIT 1
+    `,
     [userId, eventId]
   );
   return result.rows[0] || null;

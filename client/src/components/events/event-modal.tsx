@@ -113,7 +113,7 @@ export function EventModal({
   const [noteHovered, setNoteHovered] = useState(false);
 
   // --- photos ---
-  const [images, setImages] = useState<SavedUserEventImage[]>([]);
+  const [images, setImages] = useState<SavedUserEventImage[]>(() => getSavedEventImages(event));
   const [stagedUri, setStagedUri] = useState<string | null>(null); // local preview, not uploaded yet
   const [stagedBase64, setStagedBase64] = useState<string | null>(null);
   const [imageCaption, setImageCaption] = useState('');
@@ -211,10 +211,11 @@ export function EventModal({
         setSavedNote(r.event_comment ?? '');
         setNoteEditing(!normalizeNote(r.event_comment));
         setNoteHovered(false);
-        // NOTE: checkEventSaved doesn't currently return existing photos, so
+        setImages(r.user_event_images ?? []);
+ // NOTE: checkEventSaved doesn't currently return existing photos, so
         // the gallery starts empty each time the modal opens. Photos added
         // in this session will still show up immediately below.
-      })
+        })
       .catch(() => {});
     return () => controller.abort();
   }, [canSaveEvent, userId, event.event_id]);
@@ -227,7 +228,7 @@ export function EventModal({
     setNoteHovered(false);
     setNoteMessage(null);
     setNoteError(null);
-    setImages([]);
+    setImages(getSavedEventImages(event));
     cancelStagedImage();
   }, [event]);
 
@@ -397,8 +398,8 @@ export function EventModal({
       });
       setImages((prev) => [...prev, savedImage]);
       cancelStagedImage();
-    } catch {
-      setImageError('Image upload failed. Try again.');
+    } catch (err) {
+      setImageError(err instanceof Error ? err.message : 'Image upload failed. Try again.');
     } finally {
       setImageUploading(false);
     }
@@ -718,6 +719,10 @@ function getSavedEventNote(event: EventListItem): string {
   return 'event_comment' in event && typeof event.event_comment === 'string'
     ? event.event_comment
     : '';
+}
+
+function getSavedEventImages(event: EventListItem): SavedUserEventImage[] {
+  return Array.isArray(event.user_event_images) ? event.user_event_images : [];
 }
 
 function normalizeNote(value: string | null) {
