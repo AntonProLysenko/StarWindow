@@ -37,7 +37,7 @@ The repo is a two-package monorepo — there is no root `package.json`; `client/
 | NASA APIs (APOD, DONKI, Images, news feed) | `newsService` | `NASA_API_KEY` |
 | NASA SVS Dial-a-Moon | `astronomyService` | none |
 | iss-api.fly.dev | `issService` | none |
-| VIIRS light-pollution data (eogdata.mines.edu) | `lightPollutionService` (currently a city-glow fallback heuristic; `VIIRS_ENABLED` flag) | none |
+| VIIRS light-pollution (Lorenz 2024 atlas tiles, djlorenz.github.io) | `lightPollutionService` — reads real VIIRS-derived levels from the same tiles the map overlays; city-glow heuristic remains as an error fallback (`VIIRS_ENABLED` flag) | none |
 | ipapi.co | client `user-location-service` fallback when browser/device location is denied | none |
 
 Server env vars also include: `DATABASE_URL` (Supabase connection string), `SECRET` (JWT signing), `PORT` (default 3001). Both `.env` files live in `client/` and `server/` and are gitignored.

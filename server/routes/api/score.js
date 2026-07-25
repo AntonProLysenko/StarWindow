@@ -18,19 +18,15 @@ function requiredCoordinate(value, name) {
 // clouds_pct / visibility_m are optional overrides
 // that skip the weather fetch when both are supplied.
 router.get("/", async (req, res) => {
-  const {
-    lat,
-    lon,
-    light_pollution = 5,
-    clouds_pct,
-    visibility_m,
-  } = req.query;
+  const { lat, lon, light_pollution, clouds_pct, visibility_m } = req.query;
 
   try {
     const result = await scoreService.getViewingScore({
       lat: requiredCoordinate(lat, "lat"),
       lon: requiredCoordinate(lon, "lon"),
-      lightPollutionLevel: Number(light_pollution),
+      // Omitted => the service reads the real VIIRS level for the coordinate.
+      lightPollutionLevel:
+        light_pollution !== undefined ? Number(light_pollution) : undefined,
       cloudsPct: clouds_pct !== undefined ? Number(clouds_pct) : undefined,
       visibilityM: visibility_m !== undefined ? Number(visibility_m) : undefined,
     });
@@ -44,13 +40,15 @@ router.get("/", async (req, res) => {
 // GET /api/score/summary?lat=&lon=&light_pollution=
 // One combined payload: weather + ISS + launches + events + bodies + score.
 router.get("/summary", async (req, res) => {
-  const { lat, lon, light_pollution = 5 } = req.query;
+  const { lat, lon, light_pollution } = req.query;
 
   try {
     const summary = await summaryService.getSummary({
       lat: requiredCoordinate(lat, "lat"),
       lon: requiredCoordinate(lon, "lon"),
-      lightPollutionLevel: Number(light_pollution),
+      // Omitted => the service reads the real VIIRS level for the coordinate.
+      lightPollutionLevel:
+        light_pollution !== undefined ? Number(light_pollution) : undefined,
     });
     res.json(summary);
   } catch (error) {
