@@ -77,6 +77,13 @@ export interface UserPointAward {
   points_to_next_level: number;
 }
 
+export interface ImgbbDeletionSummary {
+  attempted: number;
+  deleted: number;
+  skipped: number;
+  failed: number;
+}
+
 export interface SaveUserEventResponse {
   user_event_id: string;
   already_saved: boolean;
@@ -106,12 +113,14 @@ export interface DeleteUserEventResponse {
   deleted: boolean;
   user_event_id: string;
   reversals: UserPointAward[];
+  imgbb_deletions?: ImgbbDeletionSummary;
 }
 
 export interface DeleteUserEventImageResponse {
   deleted: boolean;
   user_event_image_id: string;
   progress: UserPointAward | null;
+  imgbb_deleted?: boolean | null;
 }
 
 export interface ViewingScoreResponse {
@@ -193,7 +202,7 @@ export function updateSavedUserEvent(
 
 export function addSavedUserEventImage(
   userEventId: number | string,
-  data: { image_url: string; caption?: string | null }
+  data: { image_url: string; imgbb_delete_url?: string | null; caption?: string | null }
 ): Promise<UserEventImage> {
   return sendRequest<typeof data, UserEventImage>(
     `${API_BASE}/api/user-events/${userEventId}/images`,

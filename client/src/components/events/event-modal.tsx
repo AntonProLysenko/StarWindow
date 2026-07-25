@@ -5,6 +5,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import * as ImagePicker from 'expo-image-picker';
+import { SymbolView } from 'expo-symbols';
 import {
   ActivityIndicator,
   Animated,
@@ -45,7 +46,7 @@ const EVENT_ACCENT = Palette.accent;
 // ImgBB upload — reads the key from EXPO_PUBLIC_IMGBB_API_KEY (see .env).
 const IMGBB_API_KEY = process.env.EXPO_PUBLIC_IMGBB_API_KEY;
 
-async function uploadImageToImgbb(base64: string): Promise<string> {
+async function uploadImageToImgbb(base64: string): Promise<{ image_url: string; imgbb_delete_url: string | null }> {
   const formData = new FormData();
   formData.append('key', IMGBB_API_KEY ?? '');
   formData.append('image', base64);
@@ -59,7 +60,10 @@ async function uploadImageToImgbb(base64: string): Promise<string> {
   if (!json.success) {
     throw new Error(json.error?.message ?? 'Upload failed');
   }
-  return json.data.url as string;
+  return {
+    image_url: json.data.url as string,
+    imgbb_delete_url: typeof json.data.delete_url === 'string' ? json.data.delete_url : null,
+  };
 }
 
 function openUrl(url: string) {
@@ -121,6 +125,8 @@ export function EventModal({
   const [imageError, setImageError] = useState<string | null>(null);
   const [imagePickerOpen, setImagePickerOpen] = useState(false);
   const [imageBusyId, setImageBusyId] = useState<string | null>(null);
+  const [imageHoveredId, setImageHoveredId] = useState<string | null>(null);
+  const imageHoverClearTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [fullScreenImage, setFullScreenImage] = useState<SavedUserEventImage | null>(null);
 
   // --- enter animation (fade + scale) ---
@@ -234,6 +240,28 @@ export function EventModal({
     cancelStagedImage();
   }, [event]);
 
+  useEffect(() => {
+    return () => {
+      if (imageHoverClearTimer.current) clearTimeout(imageHoverClearTimer.current);
+    };
+  }, []);
+
+  function showImageDelete(imageId: string) {
+    if (imageHoverClearTimer.current) {
+      clearTimeout(imageHoverClearTimer.current);
+      imageHoverClearTimer.current = null;
+    }
+    setImageHoveredId(imageId);
+  }
+
+  function scheduleImageDeleteHide(imageId: string) {
+    if (imageHoverClearTimer.current) clearTimeout(imageHoverClearTimer.current);
+    imageHoverClearTimer.current = setTimeout(() => {
+      setImageHoveredId((current) => (current === imageId ? null : current));
+      imageHoverClearTimer.current = null;
+    }, 180);
+  }
+
   async function handleSaveToggle() {
     if (!canSaveEvent || userId == null || saveBusy) return;
     setSaveError(null);
@@ -284,7 +312,7 @@ export function EventModal({
       const updatedNote = updated.event_comment ?? '';
       setNote(updatedNote);
       setSavedNote(updatedNote);
-      setNoteMessage('Comment saved.');
+      setNoteMessage('Note saved.');
       setNoteEditing(!updatedNote);
       setNoteHovered(false);
       onSavedEventUpdated?.({ event_comment: updated.event_comment });
@@ -310,7 +338,7 @@ export function EventModal({
       const updatedNote = updated.event_comment ?? '';
       setNote(updatedNote);
       setSavedNote(updatedNote);
-      setNoteMessage(value ? 'Comment saved.' : 'Comment cleared.');
+      setNoteMessage(value ? 'Note saved.' : 'Note cleared.');
       setNoteEditing(!updatedNote);
       setNoteHovered(false);
       onSavedEventUpdated?.({ event_comment: updated.event_comment });
@@ -393,9 +421,10 @@ export function EventModal({
     setImageError(null);
 
     try {
-      const hostedUrl = await uploadImageToImgbb(stagedBase64);
+      const uploadedImage = await uploadImageToImgbb(stagedBase64);
       const savedImage = await addSavedUserEventImage(savedId, {
-        image_url: hostedUrl,
+        image_url: uploadedImage.image_url,
+        imgbb_delete_url: uploadedImage.imgbb_delete_url,
         caption: imageCaption.trim() || null,
       });
       setImages((prev) => [...prev, savedImage]);
@@ -414,6 +443,7 @@ export function EventModal({
     try {
       await deleteSavedUserEventImage(savedId, image.user_event_image_id);
       setImages((prev) => prev.filter((img) => img.user_event_image_id !== image.user_event_image_id));
+      setImageHoveredId((current) => (current === image.user_event_image_id ? null : current));
       setFullScreenImage((current) =>
         current?.user_event_image_id === image.user_event_image_id ? null : current
       );
@@ -556,14 +586,14 @@ export function EventModal({
 
               {saved && savedId ? (
                 <View style={styles.noteSection}>
-                  <Text style={styles.noteSectionTitle}>PRIVATE COMMENT</Text>
+                  <Text style={styles.noteSectionTitle}>PRIVATE NOTE</Text>
                   {normalizeNote(savedNote) && !noteEditing ? (
                     <Pressable
                       onHoverIn={() => setNoteHovered(true)}
                       onHoverOut={() => setNoteHovered(false)}
                       onPress={() => setNoteEditing(true)}
                       style={styles.savedNoteBox}
-                      aria-label="Edit private comment">
+                      aria-label="Edit private note">
                       <Text style={styles.savedNoteText}>{savedNote}</Text>
                       <View
                         pointerEvents="none"
@@ -598,7 +628,7 @@ export function EventModal({
                             styles.noteButton,
                             (noteBusy || normalizeNote(note) === normalizeNote(savedNote)) && styles.noteButtonDisabled,
                           ]}>
-                          <Text style={styles.noteButtonText}>{noteBusy ? 'SAVING...' : 'SAVE COMMENT'}</Text>
+                          <Text style={styles.noteButtonText}>{noteBusy ? 'SAVING...' : 'SAVE NOTE'}</Text>
                         </Pressable>
                         <Pressable
                           onPress={handleClearNote}
@@ -626,34 +656,64 @@ export function EventModal({
                       horizontal
                       showsHorizontalScrollIndicator={false}
                       contentContainerStyle={{ gap: 10 }}>
-                      {images.map((img) => (
-                        <View key={img.user_event_image_id} style={{ width: 120 }}>
+                      {images.map((img) => {
+                        const imageBusy = imageBusyId === img.user_event_image_id;
+                        const showDelete = imageHoveredId === img.user_event_image_id || imageBusy || Platform.OS !== 'web';
+
+                        return (
+                        <View
+                          key={img.user_event_image_id}
+                          style={styles.savedImageTile}>
                           <Pressable
                             onPress={() => setFullScreenImage(img)}
+                            style={styles.savedImageOpenButton}
+                            onHoverIn={() => showImageDelete(img.user_event_image_id)}
+                            onHoverOut={() => scheduleImageDeleteHide(img.user_event_image_id)}
                             aria-label="Open photo full screen">
                             <Image
                               source={{ uri: img.image_url }}
-                              style={{ width: 120, height: 120, borderRadius: 8 }}
+                              style={styles.savedImageThumb}
                               resizeMode="cover"
                             />
+                            <Pressable
+                              onPress={(pressEvent) => {
+                                pressEvent.stopPropagation?.();
+                                handleRemoveImage(img);
+                              }}
+                              disabled={imageBusy}
+                              onHoverIn={() => showImageDelete(img.user_event_image_id)}
+                              onHoverOut={() => scheduleImageDeleteHide(img.user_event_image_id)}
+                              style={[
+                                styles.imageDeleteButton,
+                                showDelete && styles.imageDeleteButtonVisible,
+                                imageBusy && styles.imageDeleteButtonBusy,
+                              ]}
+                              aria-label="Delete photo">
+                              {imageBusy ? (
+                                <ActivityIndicator color={Palette.textPrimary} size="small" />
+                              ) : (
+                                <SymbolView
+                                  name={{
+                                    ios: 'trash.fill',
+                                    android: 'delete',
+                                    web: 'delete',
+                                  }}
+                                  size={16}
+                                  tintColor={Palette.textPrimary}
+                                />
+                              )}
+                            </Pressable>
                           </Pressable>
                           {img.caption ? (
                             <Text
-                              style={{ fontSize: 11, color: Palette.textSecondary, marginTop: 4 }}
+                              style={styles.savedImageCaption}
                               numberOfLines={2}>
                               {img.caption}
                             </Text>
                           ) : null}
-                          <Pressable
-                            onPress={() => handleRemoveImage(img)}
-                            disabled={imageBusyId === img.user_event_image_id}
-                            style={[styles.noteSecondaryButton, { marginTop: 4 }]}>
-                            <Text style={styles.noteSecondaryButtonText}>
-                              {imageBusyId === img.user_event_image_id ? 'REMOVING…' : 'REMOVE'}
-                            </Text>
-                          </Pressable>
                         </View>
-                      ))}
+                        );
+                      })}
                     </ScrollView>
                   ) : null}
 
@@ -1088,6 +1148,49 @@ const styles = StyleSheet.create({
     color: Palette.accentRed,
     fontSize: 12,
     fontWeight: '700',
+  },
+  savedImageTile: {
+    width: 120,
+    gap: 4,
+  },
+  savedImageOpenButton: {
+    position: 'relative',
+    width: 120,
+    height: 120,
+    borderRadius: Radius.sm,
+    overflow: 'hidden',
+    backgroundColor: Palette.bgDeep,
+  },
+  savedImageThumb: {
+    width: '100%',
+    height: '100%',
+  },
+  savedImageCaption: {
+    fontSize: 11,
+    color: Palette.textSecondary,
+    lineHeight: 15,
+  },
+  imageDeleteButton: {
+    position: 'absolute',
+    top: 7,
+    right: 7,
+    width: 32,
+    height: 32,
+    borderRadius: Radius.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: alpha(Palette.accentRed, 0.9),
+    borderWidth: 1,
+    borderColor: alpha(Palette.textPrimary, 0.3),
+    opacity: 0,
+    zIndex: 3,
+    elevation: 3,
+  },
+  imageDeleteButtonVisible: {
+    opacity: 1,
+  },
+  imageDeleteButtonBusy: {
+    opacity: 0.65,
   },
   fullScreenImageRoot: {
     zIndex: 20,
