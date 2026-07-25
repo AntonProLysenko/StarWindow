@@ -1,7 +1,10 @@
 const jwt = require("jsonwebtoken");
 
 module.exports = function(req, res, next) {
-  let token = req.get("Authorization") || req.query.token;
+  // Header-only: never accept the JWT from the query string — query params leak
+  // into server/proxy access logs and browser history. Clients send it as
+  // `Authorization: Bearer <token>` (see client send-request.ts).
+  let token = req.get("Authorization");
 
   if (token) {
     token = token.replace("Bearer ", "");

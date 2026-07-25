@@ -142,7 +142,6 @@ export default function SignUpScreen() {
         l_name: lastName.trim(),
         email: email.trim(),
         password,
-        status_id: 1,
       });
       
       setShowEventTypes(true);

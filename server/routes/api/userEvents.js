@@ -3,9 +3,9 @@ const router = express.Router();
 const ensureLoggedIn = require("../../config/ensureLoggedIn");
 const userEventQueries = require("../../db/queries/userEvents");
 
-// NOTE: this trusts user_id from the request body per the phase-2 spec. The
-// global checkToken middleware also decodes the JWT into req.user, so a stricter
-// version could use `req.user.user_id` and ignore the body — left as a follow-up.
+// All routes derive the acting user from the JWT (`req.user.user_id`, decoded by
+// the global checkToken middleware) and never trust an identifier from the body or
+// query — ownership is enforced at the query layer against that user_id.
 
 // GET /api/user-events?event_id=
 // Report whether a user has already saved an event (seeds the modal's state).

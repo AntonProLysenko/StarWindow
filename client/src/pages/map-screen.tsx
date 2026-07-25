@@ -135,6 +135,10 @@ export default function MapScreen() {
       <View style={styles.container}>
         <View style={styles.header}>
           <ThemedText type="subtitle">Stargazing Spots</ThemedText>
+          <ThemedText themeColor="textMuted" style={styles.planningNote}>
+            Planning scores show a spot&rsquo;s stargazing potential — not the current
+            time of day. Check the dashboard for how good viewing is right now.
+          </ThemedText>
         </View>
 
         <StarMap
@@ -172,5 +176,12 @@ const styles = StyleSheet.create({
   },
   header: {
     alignItems: 'center',
+  },
+  planningNote: {
+    marginTop: Spacing.xs,
+    fontSize: 12,
+    lineHeight: 16,
+    textAlign: 'center',
+    maxWidth: 520,
   },
 });
