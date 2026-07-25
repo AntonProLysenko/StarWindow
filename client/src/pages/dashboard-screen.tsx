@@ -1468,13 +1468,53 @@ function IssThumb({
   variant?: 'card' | 'hero';
 }) {
   const duration = formatIssDuration(pass?.visible_duration_sec ?? pass?.duration_sec);
+  const passTime = isLoading ? 'Checking orbit...' : pass ? formatIssClock(pass.rise?.time) : 'No pass found';
+  const stats = (
+    <View style={[styles.issStatsRow, variant === 'hero' && styles.issHeroStatsRow]}>
+      <View style={styles.issStatPill}>
+        <Text style={styles.issStatLabel}>RISE</Text>
+        <Text style={styles.issStatValue}>{pass?.rise?.direction ?? '--'}</Text>
+      </View>
+      <View style={styles.issStatPill}>
+        <Text style={styles.issStatLabel}>PEAK</Text>
+        <Text style={styles.issStatValue}>
+          {pass?.peak?.elevation_deg != null ? `${Math.round(pass.peak.elevation_deg)} deg` : '--'}
+        </Text>
+      </View>
+      <View style={styles.issStatPill}>
+        <Text style={styles.issStatLabel}>DUR</Text>
+        <Text style={styles.issStatValue}>{duration ?? '--'}</Text>
+      </View>
+    </View>
+  );
+
+  if (variant === 'hero') {
+    return (
+      <View style={[styles.issThumb, styles.issHeroThumb]}>
+        <Text style={styles.issHeroPassLabelText}>NEXT VISIBLE PASS</Text>
+        <View style={[styles.issOrbitArc, styles.issHeroOrbitArc]}>
+          <View style={[styles.issNode, styles.issPeakNode]} />
+        </View>
+        <Text style={styles.issHeroClockText}>{passTime}</Text>
+        <View style={[styles.issStation, styles.issHeroStation]}>
+          <Image
+            source={require('@/assets/images/iss.png')}
+            style={styles.issStationIcon}
+            resizeMode="contain"
+          />
+        </View>
+        {stats}
+      </View>
+    );
+  }
 
   return (
-      <View style={[styles.issThumb, variant === 'hero' && styles.issHeroThumb]}>
+    <View style={styles.issThumb}>
       <View style={styles.issHorizon} />
-      <View style={[styles.issOrbitArc, variant === 'hero' && styles.issHeroOrbitArc]} />
-      <View style={[styles.issNode, styles.issPeakNode, variant === 'hero' && styles.issHeroPeakNode]} />
-      <View style={[styles.issStation, variant === 'hero' && styles.issHeroStation]}>
+      <View style={styles.issOrbitArc}>
+        <View style={[styles.issNode, styles.issPeakNode]} />
+      </View>
+      <View style={styles.issStation}>
         <Image
           source={require('@/assets/images/iss.png')}
           style={styles.issStationIcon}
@@ -1484,27 +1524,10 @@ function IssThumb({
 
       <View style={styles.issReadout}>
         <Text style={styles.issReadoutLabel}>NEXT VISIBLE PASS</Text>
-        <Text style={styles.issReadoutValue}>
-          {isLoading ? 'Checking orbit...' : pass ? formatIssClock(pass.rise?.time) : 'No pass found'}
-        </Text>
+        <Text style={styles.issReadoutValue}>{passTime}</Text>
       </View>
 
-      <View style={styles.issStatsRow}>
-        <View style={styles.issStatPill}>
-          <Text style={styles.issStatLabel}>RISE</Text>
-          <Text style={styles.issStatValue}>{pass?.rise?.direction ?? '--'}</Text>
-        </View>
-        <View style={styles.issStatPill}>
-          <Text style={styles.issStatLabel}>PEAK</Text>
-          <Text style={styles.issStatValue}>
-            {pass?.peak?.elevation_deg != null ? `${Math.round(pass.peak.elevation_deg)} deg` : '--'}
-          </Text>
-        </View>
-        <View style={styles.issStatPill}>
-          <Text style={styles.issStatLabel}>DUR</Text>
-          <Text style={styles.issStatValue}>{duration ?? '--'}</Text>
-        </View>
-      </View>
+      {stats}
     </View>
   );
 }
@@ -2143,7 +2166,7 @@ const styles = StyleSheet.create({
   issHeroOrbitArc: {
     left: '8%',
     right: '8%',
-    bottom: 48,
+    bottom: dvh(48),
     height: dvh(120),
   },
   issNode: {
@@ -2158,10 +2181,7 @@ const styles = StyleSheet.create({
   issPeakNode: {
     left: '50%',
     marginLeft: -3.5,
-    top: 38,
-  },
-  issHeroPeakNode: {
-    top: 49,
+    top: -4,
   },
   issStation: {
     position: 'absolute',
@@ -2179,12 +2199,6 @@ const styles = StyleSheet.create({
     shadowRadius: 18,
     elevation: 5,
   },
-  issHeroStation: {
-    top: 86,
-    marginLeft: -58,
-    width: dvw(116),
-    height: dvh(60),
-  },
   issStationIcon: {
     width: '100%',
     height: '100%',
@@ -2196,6 +2210,34 @@ const styles = StyleSheet.create({
     right: 8,
     alignItems: 'center',
     gap: 2,
+  },
+  issHeroPassLabelText: {
+    position: 'absolute',
+    top: dvh(26),
+    left: 8,
+    right: 8,
+    color: Palette.textTertiary,
+    fontSize: 9,
+    lineHeight: 11,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  issHeroClockText: {
+    position: 'absolute',
+    top: dvh(62),
+    left: 8,
+    right: 8,
+    color: Palette.textPrimary,
+    fontSize: 17,
+    lineHeight: 21,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  issHeroStation: {
+    top: dvh(102),
+    marginLeft: -58,
+    width: dvw(116),
+    height: dvh(60),
   },
   issReadoutLabel: {
     color: Palette.textTertiary,
@@ -2216,6 +2258,11 @@ const styles = StyleSheet.create({
     bottom: 8,
     flexDirection: 'row',
     gap: 6,
+  },
+  issHeroStatsRow: {
+    left: 16,
+    right: 16,
+    bottom: 8,
   },
   issStatPill: {
     flex: 1,
