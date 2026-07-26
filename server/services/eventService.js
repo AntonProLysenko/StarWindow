@@ -147,7 +147,11 @@ async function normalizeExternalEvent(event) {
     ? await locationQueries.findOrCreateLocationByName(event.location)
     : null;
   const videoUrls = collectUrls(event.vid_urls);
-  const externalUrls = collectUrls(event.info_urls, updateInfoUrls(event.updates));
+  const externalUrls = collectUrls(
+    event.info_urls,
+    updateInfoUrls(event.updates),
+    spacecraftFallbackLinks({ name: event.name, type: event.type?.name })
+  );
 
   return {
     name: event.name,
@@ -471,13 +475,50 @@ function parseUrlList(value) {
 
 function normalizeCachedLinks(row) {
   const videoUrls = parseUrlList(row.video_url);
-  const externalUrls = parseUrlList(row.info_url);
+  const externalUrls = collectUrls(
+    parseUrlList(row.info_url),
+    spacecraftFallbackLinks({ name: row.name, type: row.event_type || row.type })
+  );
   return {
     video_url: videoUrls[0] || null,
     video_urls: videoUrls,
     external_url: externalUrls[0] || null,
     external_urls: externalUrls,
   };
+}
+
+function spacecraftFallbackLinks({ name, type }) {
+  const text = `${type || ""} ${name || ""}`.toLowerCase();
+  const links = [];
+
+  if (
+    !text.includes("spacecraft") &&
+    !text.includes("docking") &&
+    !text.includes("undocking") &&
+    !text.includes("berthing") &&
+    !text.includes("release") &&
+    !text.includes("reentry") &&
+    !text.includes("landing")
+  ) {
+    return links;
+  }
+
+  if (text.includes("starliner") || text.includes("boeing")) {
+    links.push(
+      "https://www.boeing.com/content/theboeingcompany/us/en/space/starliner.html",
+      "https://www.nasa.gov/blogs/commercialcrew/2025/11/24/nasa-boeing-modify-commercial-crew-contract/"
+    );
+  }
+
+  if (text.includes("dream chaser") || text.includes("snc-1") || text.includes("sierra")) {
+    links.push(
+      "https://www.nasa.gov/missions/station/commercial-resupply/sierra-spaces-dream-chaser-new-station-resupply-spacecraft-for-nasa/",
+      "https://www.nasa.gov/missions/station/nasa-sierra-space-modify-commercial-resupply-services-contract/",
+      "https://www.faa.gov/space/stakeholder_engagement/shuttle_landing_facility/sierra_operations"
+    );
+  }
+
+  return links;
 }
 
 function slugify(value) {

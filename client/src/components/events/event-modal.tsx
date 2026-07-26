@@ -1200,24 +1200,7 @@ function getInfoLinkText(index = 0) {
 function getShortLinkText(url: string) {
   try {
     const parsed = new URL(url);
-    const host = parsed.hostname.replace(/^www\./, '');
-    const segments = parsed.pathname
-      .split('/')
-      .map((segment) => segment.trim())
-      .filter(Boolean);
-    const mainSegment = segments
-      .reverse()
-      .find((segment) => !/^(index|article|news|launches?|missions?)$/i.test(segment));
-    if (!mainSegment) return host;
-
-    const cleanSegment = decodeURIComponent(mainSegment)
-      .replace(/\.[a-z0-9]{2,5}$/i, '')
-      .replace(/[-_]+/g, ' ')
-      .trim();
-    if (!cleanSegment) return host;
-
-    const shortSegment = cleanSegment.length > 24 ? `${cleanSegment.slice(0, 21)}...` : cleanSegment;
-    return `${host} ${shortSegment}`;
+    return parsed.hostname.replace(/^www\./, '');
   } catch {
     return url;
   }
