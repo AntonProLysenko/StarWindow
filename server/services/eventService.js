@@ -4,6 +4,7 @@
 const eventQueries = require("../db/queries/events");
 const launchQueries = require("../db/queries/launches");
 const locationQueries = require("../db/queries/locations");
+const meteorService = require("./meteorService");
 const { isCacheStale, TTL_MINUTES } = require("../middleware/cache");
 
 const LL2_BASE = "https://lldev.thespacedevs.com/2.3.0";
@@ -189,10 +190,16 @@ async function getSpacewalks({ limit = 5, fromDate, toDate } = {}) {
  * @returns {Promise<Array<object>>}
  */
 async function getUpcomingList() {
+  const now = new Date();
+  const nextYear = new Date(now.getTime() + 365 * 24 * 60 * 60 * 1000);
   const [events, launches] = await Promise.all([
     eventQueries.getUpcomingNonLaunchEvents(),
     launchQueries.getUpcomingLaunches(),
   ]);
+  const meteorShowers = meteorService.getMeteorShowers({
+    fromDate: now.toISOString(),
+    toDate: nextYear.toISOString(),
+  }).results;
 
   const normalizedEvents = events.map((e) => ({
     id: e.event_id,
@@ -245,7 +252,7 @@ async function getUpcomingList() {
   }));
 
   // Merge, then sort chronologically. Items with a missing/invalid date sort last.
-  return [...normalizedEvents, ...normalizedLaunches].sort((a, b) => {
+  return [...normalizedEvents, ...normalizedLaunches, ...meteorShowers].sort((a, b) => {
     const ta = a.date ? new Date(a.date).getTime() : Infinity;
     const tb = b.date ? new Date(b.date).getTime() : Infinity;
     return ta - tb;

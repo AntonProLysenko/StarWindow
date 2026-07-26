@@ -3,6 +3,7 @@ import sendRequest from './send-request';
 const API_BASE = process.env.EXPO_PUBLIC_API_URL;
 const EVENTS_URL = `${API_BASE}/api/events`;
 const LAUNCHES_URL = `${API_BASE}/api/launches`;
+const METEOR_SHOWERS_URL = `${API_BASE}/api/meteor-showers`;
 const ASTRONOMY_BODIES_URL = `${API_BASE}/api/astronomy/bodies`;
 const calendarSourceCache = new Map<string, unknown | null>();
 const pendingCalendarSourceRequests = new Map<string, Promise<unknown | null>>();
@@ -21,6 +22,15 @@ type RawEvent = {
   video_urls?: string[];
   video_url?: string | null;
   image_url?: string | null;
+  radiant?: string | null;
+  radiant_declination_degrees?: number | string | null;
+  zhr?: number | string | null;
+  active_start?: string | null;
+  active_end?: string | null;
+  peak_date?: string | null;
+  best_time?: string | null;
+  moon_age_days?: number | string | null;
+  radiant_max_altitude_degrees?: number | string | null;
 };
 
 type RawLaunch = {
@@ -130,6 +140,15 @@ export type CalendarEvent = {
   location?: string | null;
   imageUrl?: string | null;
   visibleBodies?: VisibleBodyCalendarItem[];
+  radiant?: string | null;
+  radiantDeclinationDegrees?: number | string | null;
+  zhr?: number | string | null;
+  activeStart?: string | null;
+  activeEnd?: string | null;
+  peakDate?: string | null;
+  bestTime?: string | null;
+  moonAgeDays?: number | string | null;
+  radiantMaxAltitudeDegrees?: number | string | null;
 };
 
 export type VisibleBodyCalendarItem = {
@@ -154,6 +173,7 @@ export type CalendarEventsQuery = {
 
 function getEventIcon(type?: string) {
   const normalized = type?.toLowerCase() ?? '';
+  if (normalized.includes('meteor')) return 'M';
   if (normalized.includes('launch')) return 'L';
   if (normalized.includes('eclipse')) return 'E';
   if (normalized.includes('spacewalk')) return 'S';
@@ -217,6 +237,15 @@ function toCalendarEvent(event: RawEvent, index: number): CalendarEvent | null {
     videoUrl: event.video_url ?? event.video_urls?.[0] ?? null,
     location: event.location,
     imageUrl: event.image_url,
+    radiant: event.radiant ?? null,
+    radiantDeclinationDegrees: event.radiant_declination_degrees ?? null,
+    zhr: event.zhr ?? null,
+    activeStart: event.active_start ?? null,
+    activeEnd: event.active_end ?? null,
+    peakDate: event.peak_date ?? null,
+    bestTime: event.best_time ?? null,
+    moonAgeDays: event.moon_age_days ?? null,
+    radiantMaxAltitudeDegrees: event.radiant_max_altitude_degrees ?? null,
   };
 }
 
@@ -469,24 +498,32 @@ export async function fetchCalendarEvents(input?: number | CalendarEventsQuery):
     from_date: fromDate,
     to_date: toDate,
   });
+  const meteorParams = new URLSearchParams({
+    limit: String(boundedLimit ?? 100),
+    from_date: fromDate,
+    to_date: toDate,
+  });
+  if (hasCoordinates) meteorParams.set('latitude', String(latitude));
 
   const launchesUrl = `${LAUNCHES_URL}?${launchesParams}`;
   const spacewalksUrl = `${EVENTS_URL}/spacewalks?${spacewalksParams}`;
+  const meteorShowersUrl = `${METEOR_SHOWERS_URL}?${meteorParams}`;
   const bodiesUrl = hasCoordinates && includeVisibleBodies
     ? `${ASTRONOMY_BODIES_URL}?latitude=${latitude}&longitude=${longitude}` +
       `&from_date=${fromDate}&to_date=${toDate}`
     : null;
 
-  const [eventsData, launchesData, spacewalksData, bodiesData] = await Promise.all([
+  const [eventsData, launchesData, spacewalksData, meteorShowersData, bodiesData] = await Promise.all([
     fetchOptionalCalendarSource<EventsResponse>(eventsUrl, 'events'),
     fetchOptionalCalendarSource<LaunchesResponse>(launchesUrl, 'launches'),
     fetchOptionalCalendarSource<SpacewalksResponse>(spacewalksUrl, 'spacewalks'),
+    fetchOptionalCalendarSource<EventsResponse>(meteorShowersUrl, 'meteor showers'),
     bodiesUrl
       ? fetchOptionalCalendarSource<BodiesResponse>(bodiesUrl, 'visible bodies')
       : Promise.resolve(null),
   ]);
 
-  if (!eventsData && !launchesData && !spacewalksData && !bodiesData) {
+  if (!eventsData && !launchesData && !spacewalksData && !meteorShowersData && !bodiesData) {
     throw new Error('Could not load calendar events.');
   }
 
@@ -494,6 +531,7 @@ export async function fetchCalendarEvents(input?: number | CalendarEventsQuery):
     ...(launchesData?.results ?? []).map(toLaunchCalendarEvent),
     ...(eventsData?.results ?? []).map(toCalendarEvent),
     ...(spacewalksData?.results ?? []).map(toSpacewalkCalendarEvent),
+    ...(meteorShowersData?.results ?? []).map(toCalendarEvent),
     ...toBodyCalendarEvents(bodiesData?.results ?? []),
   ].filter((event): event is CalendarEvent => event !== null);
 

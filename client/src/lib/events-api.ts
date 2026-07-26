@@ -60,6 +60,15 @@ export interface EventListItem {
   video_url: string | null;
   launch_details: LaunchDetails | null;
   visible_bodies?: VisibleBodyEventItem[];
+  radiant?: string | null;
+  radiant_declination_degrees?: number | string | null;
+  zhr?: number | string | null;
+  active_start?: string | null;
+  active_end?: string | null;
+  peak_date?: string | null;
+  best_time?: string | null;
+  moon_age_days?: number | string | null;
+  radiant_max_altitude_degrees?: number | string | null;
   user_event_images?: SavedUserEventImage[];
 }
 
@@ -137,7 +146,13 @@ export interface DeleteUserEventImageResponse {
 
 export interface ViewingScoreResponse {
   viewing_score: number;
-  inputs: { clouds_pct: number; visibility_m: number; light_pollution_level: number };
+  inputs: {
+    clouds_pct: number;
+    visibility_m: number;
+    light_pollution_level: number;
+    sun_altitude_deg?: number;
+    darkness_factor?: number;
+  };
   weather: unknown;
 }
 

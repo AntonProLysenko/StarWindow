@@ -53,6 +53,15 @@ function calendarEventToEventListItem(event: CalendarEvent): EventListItem {
     video_url: event.videoUrl ?? null,
     launch_details: event.launchDetails ?? null,
     visible_bodies: event.visibleBodies ?? undefined,
+    radiant: event.radiant ?? null,
+    radiant_declination_degrees: event.radiantDeclinationDegrees ?? null,
+    zhr: event.zhr ?? null,
+    active_start: event.activeStart ?? null,
+    active_end: event.activeEnd ?? null,
+    peak_date: event.peakDate ?? null,
+    best_time: event.bestTime ?? null,
+    moon_age_days: event.moonAgeDays ?? null,
+    radiant_max_altitude_degrees: event.radiantMaxAltitudeDegrees ?? null,
   };
 }
 

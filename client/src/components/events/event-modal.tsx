@@ -36,6 +36,7 @@ import {
   updateSavedUserEvent,
   type EventListItem,
   type SavedUserEventImage,
+  type ViewingScoreResponse,
   type VisibleBodyEventItem,
 } from '@/lib/events-api';
 import { describeVisibility } from '@/lib/event-visibility';
@@ -98,11 +99,13 @@ export function EventModal({
   const hasWebcast = Boolean(event.video_url) || event.webcast_live;
   const visibleBodies = getVisibleBodies(event);
   const hasVisibleBodySlider = visibleBodies.length > 0;
+  const isMeteorShower = isMeteorShowerEvent(event);
 
   const contentRef = useRef<View>(null);
 
   // --- viewing score ---
   const [score, setScore] = useState<number | null>(null);
+  const [scoreInputs, setScoreInputs] = useState<ViewingScoreResponse['inputs'] | null>(null);
   const [scoreLoading, setScoreLoading] = useState(false);
 
   // --- saved state ---
@@ -196,14 +199,21 @@ export function EventModal({
   // --- fetch viewing score for the user's location (only if visible) ---
   useEffect(() => {
     setScore(null);
+    setScoreInputs(null);
     if (!visible || userLat == null || userLon == null) return;
 
     const controller = new AbortController();
     setScoreLoading(true);
     fetchViewingScore(userLat, userLon, controller.signal)
-      .then((r) => setScore(r.viewing_score))
+      .then((r) => {
+        setScore(r.viewing_score);
+        setScoreInputs(r.inputs ?? null);
+      })
       .catch((err) => {
-        if ((err as Error).name !== 'AbortError') setScore(null);
+        if ((err as Error).name !== 'AbortError') {
+          setScore(null);
+          setScoreInputs(null);
+        }
       })
       .finally(() => setScoreLoading(false));
     return () => controller.abort();
@@ -523,7 +533,15 @@ export function EventModal({
               ) : null}
 
               {/* Viewing score — or, if the event is too far, a 0 + gentle note */}
-              {tooFar ? (
+              {isMeteorShower ? (
+                <MeteorVisibilityPanel
+                  event={event}
+                  score={score}
+                  scoreInputs={scoreInputs}
+                  scoreLoading={scoreLoading}
+                  hasLocation={userLat != null && userLon != null}
+                />
+              ) : tooFar ? (
                 <View style={styles.gaugeWrap}>
                   <ScoreGauge score={0} />
                   <Text style={styles.note}>
@@ -932,6 +950,103 @@ function VisibleBodyDescription({ bodies }: { bodies: VisibleBodyEventItem[] }) 
   );
 }
 
+function MeteorVisibilityPanel({
+  event,
+  score,
+  scoreInputs,
+  scoreLoading,
+  hasLocation,
+}: {
+  event: EventListItem;
+  score: number | null;
+  scoreInputs: ViewingScoreResponse['inputs'] | null;
+  scoreLoading: boolean;
+  hasLocation: boolean;
+}) {
+  const radiantAltitude = formatMeteorNumber(event.radiant_max_altitude_degrees, 0);
+  const radiantDeclination = formatMeteorNumber(event.radiant_declination_degrees, 1);
+  const sunAltitude = formatMeteorNumber(scoreInputs?.sun_altitude_deg, 1);
+  const darknessFactor = formatMeteorNumber(scoreInputs?.darkness_factor, 2);
+  const clouds = formatMeteorNumber(scoreInputs?.clouds_pct, 0);
+  const visibilityKm = formatMeteorNumber(
+    scoreInputs?.visibility_m == null ? null : Number(scoreInputs.visibility_m) / 1000,
+    1
+  );
+  const lightPollution = formatMeteorNumber(scoreInputs?.light_pollution_level, 1);
+
+  return (
+    <View style={styles.meteorVisibilityPanel}>
+      <Text style={styles.meteorVisibilityTitle}>Meteor shower data</Text>
+
+      <View style={styles.meteorVisibilityGrid}>
+        {hasLocation && radiantAltitude ? (
+          <View style={styles.meteorVisibilityMetric}>
+            <Text style={styles.meteorVisibilityValue}>{radiantAltitude} deg</Text>
+            <Text style={styles.meteorVisibilityLabel}>max radiant altitude</Text>
+          </View>
+        ) : null}
+        {radiantDeclination ? (
+          <View style={styles.meteorVisibilityMetric}>
+            <Text style={styles.meteorVisibilityValue}>{radiantDeclination} deg</Text>
+            <Text style={styles.meteorVisibilityLabel}>radiant declination</Text>
+          </View>
+        ) : null}
+        {event.zhr != null ? (
+          <View style={styles.meteorVisibilityMetric}>
+            <Text style={styles.meteorVisibilityValue}>{event.zhr}</Text>
+            <Text style={styles.meteorVisibilityLabel}>max meteors/hour</Text>
+          </View>
+        ) : null}
+        {score != null ? (
+          <View style={styles.meteorVisibilityMetric}>
+            <Text style={styles.meteorVisibilityValue}>{score}/100</Text>
+            <Text style={styles.meteorVisibilityLabel}>current sky score</Text>
+          </View>
+        ) : null}
+        {sunAltitude ? (
+          <View style={styles.meteorVisibilityMetric}>
+            <Text style={styles.meteorVisibilityValue}>{sunAltitude} deg</Text>
+            <Text style={styles.meteorVisibilityLabel}>current sun altitude</Text>
+          </View>
+        ) : null}
+        {darknessFactor ? (
+          <View style={styles.meteorVisibilityMetric}>
+            <Text style={styles.meteorVisibilityValue}>{darknessFactor}</Text>
+            <Text style={styles.meteorVisibilityLabel}>current darkness factor</Text>
+          </View>
+        ) : null}
+        {clouds ? (
+          <View style={styles.meteorVisibilityMetric}>
+            <Text style={styles.meteorVisibilityValue}>{clouds}%</Text>
+            <Text style={styles.meteorVisibilityLabel}>current cloud cover</Text>
+          </View>
+        ) : null}
+        {visibilityKm ? (
+          <View style={styles.meteorVisibilityMetric}>
+            <Text style={styles.meteorVisibilityValue}>{visibilityKm} km</Text>
+            <Text style={styles.meteorVisibilityLabel}>current ground visibility</Text>
+          </View>
+        ) : null}
+        {lightPollution ? (
+          <View style={styles.meteorVisibilityMetric}>
+            <Text style={styles.meteorVisibilityValue}>{lightPollution}</Text>
+            <Text style={styles.meteorVisibilityLabel}>light pollution level</Text>
+          </View>
+        ) : null}
+      </View>
+
+      {!hasLocation ? (
+        <Text style={styles.meteorSkyScoreText}>Location needed for max radiant altitude and current sky score.</Text>
+      ) : scoreLoading ? (
+        <View style={styles.meteorSkyScoreRow}>
+          <ActivityIndicator color={Palette.accent} />
+          <Text style={styles.meteorSkyScoreText}>Loading current sky data...</Text>
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
 function getSavedEventNote(event: EventListItem): string {
   return 'event_comment' in event && typeof event.event_comment === 'string'
     ? event.event_comment
@@ -954,6 +1069,16 @@ function toFiniteNumber(value: string | number | null | undefined) {
   if (value === null || value === undefined) return null;
   const number = Number(value);
   return Number.isFinite(number) ? number : null;
+}
+
+function isMeteorShowerEvent(event: EventListItem) {
+  const text = `${event.type ?? ''} ${event.name ?? ''}`.toLowerCase();
+  return text.includes('meteor') && text.includes('shower');
+}
+
+function formatMeteorNumber(value: string | number | null | undefined, digits: number) {
+  const number = toFiniteNumber(value);
+  return number == null ? null : number.toFixed(digits);
 }
 
 function formatBodyMetric(value: string | number | null | undefined, digits: number) {
@@ -1234,6 +1359,64 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 4,
     gap: 10,
+  },
+  meteorVisibilityPanel: {
+    backgroundColor: Palette.bgDeep,
+    borderWidth: 1,
+    borderColor: Palette.borderSoft,
+    borderRadius: Radius.md,
+    padding: 12,
+    gap: 10,
+  },
+  meteorVisibilityTitle: {
+    color: Palette.textPrimary,
+    fontSize: 13,
+    lineHeight: 17,
+    fontWeight: '800',
+  },
+  meteorVisibilityGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  meteorVisibilityMetric: {
+    minWidth: 120,
+    flex: 1,
+    borderWidth: 1,
+    borderColor: Palette.borderSoft,
+    borderRadius: Radius.sm,
+    backgroundColor: Palette.surfaceRaised,
+    paddingVertical: 9,
+    paddingHorizontal: 10,
+    gap: 2,
+  },
+  meteorVisibilityValue: {
+    color: Palette.accent,
+    fontSize: 16,
+    lineHeight: 20,
+    fontWeight: '900',
+  },
+  meteorVisibilityLabel: {
+    color: Palette.textSecondary,
+    fontSize: 10.5,
+    lineHeight: 14,
+    fontWeight: '700',
+    letterSpacing: 0,
+  },
+  meteorVisibilityNote: {
+    color: Palette.textSecondary,
+    fontSize: 12.5,
+    lineHeight: 18,
+  },
+  meteorSkyScoreRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  meteorSkyScoreText: {
+    color: Palette.textTertiary,
+    fontSize: 12,
+    lineHeight: 17,
   },
   description: {
     fontSize: 14,
