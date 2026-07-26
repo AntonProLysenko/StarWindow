@@ -33,12 +33,18 @@ export interface RocketLaunch {
   location?: string;
   /** Next launches scheduled at this pad. */
   upcoming?: {
+    id?: string | number;
+    eventId?: string | number | null;
     name: string;
     net?: string;
+    netPrecision?: string | null;
     status?: string;
     provider?: string;
     rocket?: string;
     imageUrl?: string;
+    missionName?: string | null;
+    missionType?: string | null;
+    missionDescription?: string | null;
   }[];
 }
 

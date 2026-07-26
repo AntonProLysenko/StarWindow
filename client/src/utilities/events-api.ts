@@ -77,6 +77,8 @@ type RawBody = {
   distance_from_earth_km?: string | number | null;
   constellation?: string | null;
   magnitude?: string | number | null;
+  image_url?: string | null;
+  image_source?: string | null;
 };
 
 type EventsResponse = {
@@ -127,6 +129,18 @@ export type CalendarEvent = {
   } | null;
   location?: string | null;
   imageUrl?: string | null;
+  visibleBodies?: VisibleBodyCalendarItem[];
+};
+
+export type VisibleBodyCalendarItem = {
+  body: string;
+  altitude_degrees?: string | number | null;
+  azimuth_degrees?: string | number | null;
+  distance_from_earth_km?: string | number | null;
+  constellation?: string | null;
+  magnitude?: string | number | null;
+  image_url?: string | null;
+  image_source?: string | null;
 };
 
 export type CalendarEventsQuery = {
@@ -296,11 +310,14 @@ function toBodyCalendarEvent(observedDate: string, bodies: RawBody[]): CalendarE
   const observed = parseApiDate(observedDate);
   if (Number.isNaN(observed.getTime())) return null;
 
-  const visibleBodies = bodies.filter((body) => body.body);
+  const visibleBodies = bodies
+    .filter((body): body is RawBody & { body: string } => Boolean(body.body))
+    .sort((a, b) => (toFiniteNumber(b.altitude_degrees) ?? -Infinity) - (toFiniteNumber(a.altitude_degrees) ?? -Infinity));
   if (visibleBodies.length === 0) return null;
 
   const bodyNames = visibleBodies.map((body) => body.body).filter(Boolean).join(', ');
   const detail = visibleBodies.map(formatBodyEventDetail).join(' | ');
+  const bodyItems = visibleBodies.map(toVisibleBodyCalendarItem);
 
   return {
     id: `visible-bodies-${observedDate}`,
@@ -311,6 +328,21 @@ function toBodyCalendarEvent(observedDate: string, bodies: RawBody[]): CalendarE
     detail: detail || `${bodyNames} visible above the horizon.`,
     icon: getEventIcon('Visible Body'),
     type: 'Visible Body',
+    imageUrl: bodyItems.find((body) => body.image_url)?.image_url ?? null,
+    visibleBodies: bodyItems,
+  };
+}
+
+function toVisibleBodyCalendarItem(body: RawBody & { body: string }): VisibleBodyCalendarItem {
+  return {
+    body: body.body,
+    altitude_degrees: body.altitude_degrees ?? null,
+    azimuth_degrees: body.azimuth_degrees ?? null,
+    distance_from_earth_km: body.distance_from_earth_km ?? null,
+    constellation: body.constellation ?? null,
+    magnitude: body.magnitude ?? null,
+    image_url: body.image_url ?? null,
+    image_source: body.image_source ?? null,
   };
 }
 
@@ -334,6 +366,12 @@ function formatNumber(value: string | number | null | undefined, digits: number)
   if (value === null || value === undefined) return null;
   const number = Number(value);
   return Number.isFinite(number) ? number.toFixed(digits) : null;
+}
+
+function toFiniteNumber(value: string | number | null | undefined) {
+  if (value === null || value === undefined) return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
 }
 
 function normalizeForKey(value?: string | null) {

@@ -27,12 +27,23 @@ export async function fetchMoonView(datetime?: string): Promise<MoonView> {
 
 /** Raw shape of one launch as returned by GET /api/astronomy/launches. */
 interface RawLaunch {
+  id?: string | number;
+  launch_id?: string | number;
+  event_id?: string | number | null;
   name?: string;
   status?: string;
   net?: string;
+  net_precision?: string | null;
+  date_precision?: string | null;
   provider?: string;
   rocket?: string;
   image?: string | null;
+  image_url?: string | null;
+  mission?: {
+    name?: string | null;
+    type?: string | null;
+    description?: string | null;
+  } | null;
   pad?: {
     name?: string;
     location?: string;
@@ -94,12 +105,18 @@ export async function fetchLaunches(limit = 20): Promise<RocketLaunch[]> {
     seenLaunches?.add(launchKey);
 
     site.upcoming!.push({
+      id: l.launch_id ?? l.id,
+      eventId: l.event_id ?? null,
       name: l.name ?? 'Launch',
       net: l.net,
+      netPrecision: l.net_precision ?? l.date_precision ?? null,
       status: l.status,
       provider: l.provider,
       rocket: l.rocket,
-      imageUrl: l.image ?? undefined,
+      imageUrl: l.image ?? l.image_url ?? undefined,
+      missionName: l.mission?.name ?? null,
+      missionType: l.mission?.type ?? null,
+      missionDescription: l.mission?.description ?? null,
     });
   }
 

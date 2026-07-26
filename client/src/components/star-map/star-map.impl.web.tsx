@@ -65,8 +65,35 @@ function formatNet(net?: string): string | null {
   return Number.isNaN(d.getTime()) ? null : d.toLocaleString();
 }
 
-function goToLaunch(launchName: string) {
-  router.push({ pathname: '/events', params: { launch: launchName } });
+type LaunchPopupItem = NonNullable<RocketLaunch['upcoming']>[number];
+
+function goToLaunch(launch: LaunchPopupItem, site: RocketLaunch) {
+  const params: Record<string, string> = {
+    category: 'launch',
+    type: 'Rocket Launch',
+    name: launch.name,
+    synthetic: 'true',
+  };
+
+  const description = launch.missionDescription || [
+    launch.status,
+    launch.rocket ? `${launch.rocket}${launch.provider ? ` by ${launch.provider}` : ''}` : launch.provider,
+    site.location,
+  ].filter(Boolean).join(' | ');
+
+  for (const [key, value] of Object.entries({
+    eventId: launch.eventId,
+    date: launch.net,
+    datePrecision: launch.netPrecision,
+    description,
+    imageUrl: launch.imageUrl,
+    location: site.location ?? site.name,
+  })) {
+    if (value === null || value === undefined || value === '') continue;
+    params[key] = String(value);
+  }
+
+  router.push({ pathname: '/events', params });
 }
 
 function isValidLatLng(lat: number, lng: number) {
@@ -176,18 +203,20 @@ export default function StarMapImpl({
   const [layers, setLayers] = useState<LayerState>({
     lightBasemap: false,
     lightPollution: showLightPollution,
-    launches: false,
+    launches: !preview,
   });
   // Fire onLaunchesEnable only the first time the layer is switched on.
   const launchesRequested = useRef(false);
 
+  useEffect(() => {
+    if (!layers.launches || launchesRequested.current) return;
+    launchesRequested.current = true;
+    onLaunchesEnable?.();
+  }, [layers.launches, onLaunchesEnable]);
+
   const toggle = (key: keyof LayerState) => {
     setLayers((prev) => {
       const next = { ...prev, [key]: !prev[key] };
-      if (key === 'launches' && next.launches && !launchesRequested.current) {
-        launchesRequested.current = true;
-        onLaunchesEnable?.();
-      }
       return next;
     });
   };
@@ -310,11 +339,11 @@ export default function StarMapImpl({
                     </div>
                     {formatNet(u.net) && <div>{formatNet(u.net)}</div>}
                     <a
-                      href={`/explore?launch=${encodeURIComponent(u.name)}`}
+                      href={`/events?category=launch&type=Rocket%20Launch&name=${encodeURIComponent(u.name)}`}
                       className={classes.launchPopupLink}
                       onClick={(event) => {
                         event.preventDefault();
-                        goToLaunch(u.name);
+                        goToLaunch(u, site);
                       }}>
                       Go to launch
                     </a>
