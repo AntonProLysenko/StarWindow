@@ -21,6 +21,8 @@ type RawEvent = {
   webcast_live?: boolean;
   video_urls?: string[];
   video_url?: string | null;
+  external_url?: string | null;
+  external_urls?: string[];
   image_url?: string | null;
   radiant?: string | null;
   radiant_declination_degrees?: number | string | null;
@@ -57,6 +59,9 @@ type RawLaunch = {
   rocket?: string;
   webcast_live?: boolean;
   video_url?: string | null;
+  video_urls?: string[];
+  external_url?: string | null;
+  external_urls?: string[];
   image?: string | null;
 };
 
@@ -69,6 +74,8 @@ type RawSpacewalk = {
   duration?: string | number | null;
   location?: string | null;
   space_station?: string | null;
+  description?: string | null;
+  image_url?: string | null;
   schedule_status?: 'upcoming' | 'latest';
   crew?: {
     name?: string;
@@ -128,6 +135,9 @@ export type CalendarEvent = {
   datePrecision?: string | null;
   webcastLive?: boolean;
   videoUrl?: string | null;
+  videoUrls?: string[];
+  externalUrl?: string | null;
+  externalUrls?: string[];
   latitude?: number | null;
   longitude?: number | null;
   launchDetails?: {
@@ -245,15 +255,91 @@ function toCalendarEvent(event: RawEvent, index: number): CalendarEvent | null {
     date: start.getDate(),
     startDate: start.toISOString(),
     title: event.name ?? 'Space event',
-    time: formatEventTime(start, event.date_precision),
+    time: formatEventTime(start, event.date_precision ?? undefined),
     detail: event.description ?? event.location ?? 'No event details available.',
     icon: getEventIcon(event.type),
     type: event.type,
     datePrecision: event.date_precision ?? null,
     webcastLive: event.webcast_live ?? false,
     videoUrl: event.video_url ?? event.video_urls?.[0] ?? null,
+    videoUrls: normalizeUrlList(event.video_urls, event.video_url),
+    externalUrl: event.external_url ?? null,
+    externalUrls: normalizeUrlList(event.external_urls, event.external_url),
     location: event.location,
     imageUrl: event.image_url,
+    radiant: event.radiant ?? null,
+    radiantDeclinationDegrees: event.radiant_declination_degrees ?? null,
+    zhr: event.zhr ?? null,
+    activeStart: event.active_start ?? null,
+    activeEnd: event.active_end ?? null,
+    peakDate: event.peak_date ?? null,
+    bestTime: event.best_time ?? null,
+    moonAgeDays: event.moon_age_days ?? null,
+    radiantMaxAltitudeDegrees: event.radiant_max_altitude_degrees ?? null,
+  };
+}
+
+type EventListCalendarInput = {
+  id?: number | string;
+  event_id?: number | string;
+  category?: 'event' | 'launch';
+  name?: string;
+  type?: string;
+  date?: string | null;
+  date_precision?: string | null;
+  location?: string | null;
+  description?: string | null;
+  webcast_live?: boolean;
+  video_urls?: string[];
+  video_url?: string | null;
+  external_url?: string | null;
+  external_urls?: string[];
+  image_url?: string | null;
+  radiant?: string | null;
+  radiant_declination_degrees?: number | string | null;
+  zhr?: number | string | null;
+  active_start?: string | null;
+  active_end?: string | null;
+  peak_date?: string | null;
+  best_time?: string | null;
+  moon_age_days?: number | string | null;
+  radiant_max_altitude_degrees?: number | string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  launch_details?: CalendarEvent['launchDetails'];
+  visible_bodies?: VisibleBodyCalendarItem[];
+};
+
+export function eventListItemToCalendarEvent(event: EventListCalendarInput, index = 0): CalendarEvent | null {
+  if (!event.date) return null;
+
+  const start = parseApiDate(event.date);
+  if (Number.isNaN(start.getTime())) return null;
+
+  return {
+    id: String(event.id ?? `${event.name ?? 'event'}-${event.date}-${index}`),
+    sourceId: event.id,
+    eventId: event.event_id ?? event.id ?? null,
+    category: event.category ?? 'event',
+    date: start.getDate(),
+    startDate: start.toISOString(),
+    title: event.name ?? 'Space event',
+    time: formatEventTime(start, event.date_precision ?? undefined),
+    detail: event.description ?? event.location ?? 'No event details available.',
+    icon: getEventIcon(event.type),
+    type: event.type,
+    datePrecision: event.date_precision ?? null,
+    webcastLive: event.webcast_live ?? false,
+    videoUrl: event.video_url ?? event.video_urls?.[0] ?? null,
+    videoUrls: normalizeUrlList(event.video_urls, event.video_url),
+    externalUrl: event.external_url ?? null,
+    externalUrls: normalizeUrlList(event.external_urls, event.external_url),
+    latitude: event.latitude ?? null,
+    longitude: event.longitude ?? null,
+    launchDetails: event.launch_details ?? null,
+    location: event.location,
+    imageUrl: event.image_url,
+    visibleBodies: event.visible_bodies,
     radiant: event.radiant ?? null,
     radiantDeclinationDegrees: event.radiant_declination_degrees ?? null,
     zhr: event.zhr ?? null,
@@ -294,6 +380,9 @@ function toLaunchCalendarEvent(launch: RawLaunch, index: number): CalendarEvent 
     datePrecision: launch.net_precision ?? null,
     webcastLive: launch.webcast_live ?? false,
     videoUrl: launch.video_url ?? null,
+    videoUrls: normalizeUrlList(launch.video_urls, launch.video_url),
+    externalUrl: launch.external_url ?? null,
+    externalUrls: normalizeUrlList(launch.external_urls, launch.external_url),
     latitude: launch.pad?.latitude == null ? null : Number(launch.pad.latitude),
     longitude: launch.pad?.longitude == null ? null : Number(launch.pad.longitude),
     launchDetails: {
@@ -334,6 +423,7 @@ function toSpacewalkCalendarEvent(spacewalk: RawSpacewalk, index: number): Calen
     icon: getEventIcon('Spacewalk'),
     type: 'Spacewalk',
     location: spacewalk.location ?? spacewalk.space_station ?? null,
+    imageUrl: spacewalk.image_url ?? null,
   };
 }
 
@@ -412,6 +502,20 @@ function formatNumber(value: string | number | null | undefined, digits: number)
   if (value === null || value === undefined) return null;
   const number = Number(value);
   return Number.isFinite(number) ? number.toFixed(digits) : null;
+}
+
+function normalizeUrlList(urls?: string[] | null, fallback?: string | null) {
+  const output: string[] = [];
+  const seen = new Set<string>();
+
+  for (const url of [...(urls ?? []), fallback].filter(Boolean)) {
+    const value = String(url).trim();
+    if (!value || seen.has(value)) continue;
+    seen.add(value);
+    output.push(value);
+  }
+
+  return output;
 }
 
 function toFiniteNumber(value: string | number | null | undefined) {
@@ -573,7 +677,7 @@ export async function fetchNextUpcomingSpacewalk(now = new Date()): Promise<Upco
   });
   const spacewalksData = await sendRequest<null, SpacewalksResponse>(`${EVENTS_URL}/spacewalks?${spacewalksParams}`);
 
-  const nextSpacewalk = (spacewalksData.results ?? [])
+  const nextSpacewalk = (spacewalksData?.results ?? [])
     .filter((spacewalk) => spacewalk.start && new Date(spacewalk.start).getTime() >= now.getTime())
     .sort((a, b) => new Date(a.start ?? 0).getTime() - new Date(b.start ?? 0).getTime())[0];
 
@@ -583,9 +687,11 @@ export async function fetchNextUpcomingSpacewalk(now = new Date()): Promise<Upco
     limit: '1',
   });
   const latestSpacewalksData = await sendRequest<null, SpacewalksResponse>(`${EVENTS_URL}/spacewalks?${latestParams}`);
-  const latestSpacewalk = latestSpacewalksData.results?.[0] ?? null;
+  const latestSpacewalk = latestSpacewalksData?.results?.[0] ?? null;
 
-  return latestSpacewalk ? { ...latestSpacewalk, schedule_status: 'latest' } : null;
+  if (latestSpacewalk) return { ...latestSpacewalk, schedule_status: 'latest' };
+
+  return null;
 }
 
 export async function fetchNextUpcomingMeteorShower(

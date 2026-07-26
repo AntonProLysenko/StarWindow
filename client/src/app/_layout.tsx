@@ -4,6 +4,7 @@ import { StyleSheet, View, useColorScheme } from 'react-native';
 
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
 import { AppSidebar } from '@/components/app-sidebar';
+import { EventsProvider } from '@/context/events-context';
 import * as usersService from '@/utilities/users-service';
 import { dvw } from '@/utilities/responsive-dimensions';
 
@@ -52,13 +53,15 @@ export default function RootLayout() {
 
     return (
       <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-        <AnimatedSplashOverlay />
-        <View style={styles.shell}>
-          {showSidebar && <AppSidebar />}
-          <View style={styles.content}>
-            <Stack screenOptions={{ headerShown: false }} />
+        <EventsProvider enabled={isLoggedIn}>
+          <AnimatedSplashOverlay />
+          <View style={styles.shell}>
+            {showSidebar && <AppSidebar />}
+            <View style={styles.content}>
+              <Stack screenOptions={{ headerShown: false }} />
+            </View>
           </View>
-        </View>
+        </EventsProvider>
       </ThemeProvider>
     );
   }

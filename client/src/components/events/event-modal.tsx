@@ -31,10 +31,12 @@ import {
   checkEventSaved,
   deleteSavedUserEventImage,
   deleteUserEvent,
+  fetchLaunchLinks,
   fetchViewingScore,
   saveUserEvent,
   updateSavedUserEvent,
   type EventListItem,
+  type EventLinkResponse,
   type SavedUserEventImage,
   type ViewingScoreResponse,
   type VisibleBodyEventItem,
@@ -44,6 +46,10 @@ import { dvw, dvh } from '@/utilities/responsive-dimensions';
 
 const LAUNCH_ACCENT = Palette.accentRed;
 const EVENT_ACCENT = Palette.accent;
+const VIDEO_LINK_ACCENT = Palette.accentRed;
+const INFO_LINK_ACCENT = '#B46CFF';
+const OTHER_LINK_ACCENT = '#5EA88E';
+const OTHER_LINK_TEXT = Palette.textPrimary;
 
 // ImgBB upload — reads the key from EXPO_PUBLIC_IMGBB_API_KEY (see .env).
 const IMGBB_API_KEY = process.env.EXPO_PUBLIC_IMGBB_API_KEY;
@@ -91,15 +97,32 @@ export function EventModal({
   userLat: number | null;
   userLon: number | null;
 }) {
+  const [liveLaunchLinks, setLiveLaunchLinks] = useState<EventLinkResponse | null>(null);
   const isLaunch = event.category === 'launch';
   const accent = isLaunch ? LAUNCH_ACCENT : EVENT_ACCENT;
   const canSaveEvent = /^\d+$/.test(String(event.event_id));
   const fallbackIcon = fallbackIconSource(event);
   const { visible, tooFar, distanceMiles } = describeVisibility(event, userLat, userLon);
-  const hasWebcast = Boolean(event.video_url) || event.webcast_live;
+  const videoUrls = getEventUrls(event.video_urls, event.video_url, liveLaunchLinks?.video_urls, liveLaunchLinks?.video_url);
+  const infoUrls = getEventUrls(event.external_urls, event.external_url, liveLaunchLinks?.external_urls, liveLaunchLinks?.external_url);
+  const primaryVideoUrl = videoUrls[0] ?? null;
+  const primaryInfoUrl = infoUrls[0] ?? null;
+  const otherLinks = [
+    ...videoUrls.slice(1).map((url) => ({
+      key: `video-${url}`,
+      url,
+    })),
+    ...infoUrls.slice(1).map((url) => ({
+      key: `info-${url}`,
+      url,
+    })),
+  ];
+  const hasWebcast = videoUrls.length > 0 || event.webcast_live;
   const visibleBodies = getVisibleBodies(event);
   const hasVisibleBodySlider = visibleBodies.length > 0;
   const isMeteorShower = isMeteorShowerEvent(event);
+  const isSpacewalk = isSpacewalkEvent(event);
+  const suppressViewingScore = isNonViewingScoreEvent(event);
 
   const contentRef = useRef<View>(null);
 
@@ -196,11 +219,24 @@ export function EventModal({
     };
   }, [event.name, onClose]);
 
+  useEffect(() => {
+    setLiveLaunchLinks(null);
+    if (!isLaunch || !event.name) return;
+
+    const controller = new AbortController();
+    fetchLaunchLinks({ name: event.name, date: event.date }, controller.signal)
+      .then(setLiveLaunchLinks)
+      .catch(() => {});
+
+    return () => controller.abort();
+  }, [isLaunch, event.name, event.date]);
+
   // --- fetch viewing score for the user's location (only if visible) ---
   useEffect(() => {
     setScore(null);
     setScoreInputs(null);
-    if (!visible || userLat == null || userLon == null) return;
+    setScoreLoading(false);
+    if (suppressViewingScore || !visible || userLat == null || userLon == null) return;
 
     const controller = new AbortController();
     setScoreLoading(true);
@@ -217,7 +253,7 @@ export function EventModal({
       })
       .finally(() => setScoreLoading(false));
     return () => controller.abort();
-  }, [event.event_id, visible, userLat, userLon]);
+  }, [event.event_id, suppressViewingScore, visible, userLat, userLon]);
 
   // --- seed saved state ---
   useEffect(() => {
@@ -495,11 +531,13 @@ export function EventModal({
               showsVerticalScrollIndicator={false}
               scrollEnabled={!fullScreenImage}>
               {/* Enlarged image / fallback */}
-              <View style={[styles.hero, isLaunch && { borderColor: LAUNCH_ACCENT + '55' }]}>
+              <View style={styles.hero}>
                 {hasVisibleBodySlider ? (
                   <VisibleBodyHero bodies={visibleBodies} />
                 ) : event.image_url ? (
                   <Image source={{ uri: event.image_url }} style={styles.heroImage} resizeMode="cover" />
+                ) : fallbackIcon && isSpacewalk ? (
+                  <Image source={fallbackIcon} style={styles.heroImage} resizeMode="cover" />
                 ) : fallbackIcon ? (
                   <View style={styles.heroFallback}>
                     <Image source={fallbackIcon} style={styles.heroFallbackImage} resizeMode="contain" />
@@ -533,7 +571,7 @@ export function EventModal({
               ) : null}
 
               {/* Viewing score — or, if the event is too far, a 0 + gentle note */}
-              {isMeteorShower ? (
+              {suppressViewingScore ? null : isMeteorShower ? (
                 <MeteorVisibilityPanel
                   event={event}
                   score={score}
@@ -547,7 +585,7 @@ export function EventModal({
                   <Text style={styles.note}>
                     You're about {distanceMiles} mi from this one, a little too far to catch it
                     in person.{' '}
-                    {event.video_url
+                    {videoUrls.length > 0
                       ? 'Tune into the live stream below to enjoy it live! 🚀'
                       : "But keep an eye out, there's always the next one. 🔭"}
                   </Text>
@@ -578,18 +616,55 @@ export function EventModal({
                 <LaunchDetailsSection details={event.launch_details} />
               ) : null}
 
-              {/* Webcast */}
-              {hasWebcast ? (
-                event.video_url ? (
-                  <Pressable style={styles.watchBtn} onPress={() => openUrl(event.video_url!)}>
-                    <Text style={styles.watchBtnText}>▶  Watch live</Text>
-                  </Pressable>
-                ) : (
+              {/* Event links */}
+              {videoUrls.length > 0 || infoUrls.length > 0 || hasWebcast ? (
+                <View style={styles.eventLinkActions}>
+                  {primaryVideoUrl || primaryInfoUrl ? (
+                    <View style={styles.primaryLinkRow}>
+                      {primaryVideoUrl ? (
+                        <Pressable
+                          style={[styles.eventLinkButton, styles.videoLinkButton, styles.primaryLinkButton]}
+                          onPress={() => openUrl(primaryVideoUrl)}>
+                          <Text style={[styles.eventLinkKicker, styles.videoLinkKicker]}>Video</Text>
+                          <Text style={[styles.eventLinkText, styles.videoLinkText]}>{getVideoLinkText(event)}</Text>
+                        </Pressable>
+                      ) : null}
+                      {primaryInfoUrl ? (
+                        <Pressable
+                          style={[styles.eventLinkButton, styles.infoLinkButton, styles.primaryLinkButton]}
+                          onPress={() => openUrl(primaryInfoUrl)}>
+                          <Text style={[styles.eventLinkKicker, styles.infoLinkKicker]}>Info</Text>
+                          <Text style={[styles.eventLinkText, styles.infoLinkText]}>{getInfoLinkText()}</Text>
+                        </Pressable>
+                      ) : null}
+                    </View>
+                  ) : null}
+                  {otherLinks.length > 0 ? (
+                    <View style={styles.otherLinks}>
+                      <Text style={styles.otherLinksTitle}>Other links</Text>
+                      {otherLinks.map((link) => (
+                        <Pressable key={link.key} style={styles.otherLinkRow} onPress={() => openUrl(link.url)}>
+                          <SymbolView
+                            name={{
+                              ios: 'globe',
+                              android: 'public',
+                              web: 'public',
+                            }}
+                            size={15}
+                            tintColor={OTHER_LINK_TEXT}
+                          />
+                          <Text style={styles.otherLinkLabel} numberOfLines={1}>{getShortLinkText(link.url)}</Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                  ) : null}
+                  {videoUrls.length === 0 && infoUrls.length === 0 ? (
                   <View style={styles.liveTag}>
                     <View style={styles.liveDot} />
                     <Text style={styles.liveText}>Live coverage expected</Text>
                   </View>
-                )
+                  ) : null}
+                </View>
               ) : null}
 
               {canSaveEvent ? (
@@ -1076,6 +1151,82 @@ function isMeteorShowerEvent(event: EventListItem) {
   return text.includes('meteor') && text.includes('shower');
 }
 
+function isSpacewalkEvent(event: EventListItem) {
+  const type = `${event.type ?? ''}`.toLowerCase();
+  return type === 'eva' || type.includes('spacewalk');
+}
+
+function isNonViewingScoreEvent(event: EventListItem) {
+  const text = `${event.type ?? ''} ${event.name ?? ''}`.toLowerCase();
+  return (
+    isSpacewalkEvent(event) ||
+    isPressEvent(event) ||
+    text.includes('docking') ||
+    text.includes('undocking') ||
+    text.includes('asteroid') ||
+    text.includes('comet') ||
+    text.includes('flyby') ||
+    text.includes('near-earth') ||
+    text.includes('close approach') ||
+    text.includes('landing') ||
+    text.includes('farewell') ||
+    text.includes('hatch') ||
+    text.includes('eva')
+  );
+}
+
+function isPressEvent(event: EventListItem) {
+  const text = `${event.type ?? ''} ${event.name ?? ''}`.toLowerCase();
+  return (
+    text.includes('press') ||
+    text.includes('briefing') ||
+    text.includes('media event') ||
+    text.includes('news conference')
+  );
+}
+
+function getVideoLinkText(event: EventListItem, index = 0) {
+  if (index > 0) return `Open recording ${index + 1}`;
+
+  if (event.video_url) {
+    if (event.webcast_live) return 'Watch live';
+    if (isSpacewalkEvent(event) || isPressEvent(event)) return 'Open recording';
+    return 'Watch recording';
+  }
+
+  return 'Watch recording';
+}
+
+function getInfoLinkText(index = 0) {
+  return index === 0 ? 'Open event info' : `Open event info ${index + 1}`;
+}
+
+function getShortLinkText(url: string) {
+  try {
+    const parsed = new URL(url);
+    return parsed.hostname.replace(/^www\./, '');
+  } catch {
+    return url;
+  }
+}
+
+function getEventUrls(...groups: Array<string[] | string | null | undefined>) {
+  const output: string[] = [];
+  const seen = new Set<string>();
+
+  for (const group of groups) {
+    const urls = Array.isArray(group) ? group : group ? [group] : [];
+    for (const url of urls) {
+      const value = String(url).trim();
+      if (!value || seen.has(value)) continue;
+      seen.add(value);
+      output.push(value);
+    }
+  }
+
+  return output;
+}
+
 function formatMeteorNumber(value: string | number | null | undefined, digits: number) {
   const number = toFiniteNumber(value);
   return number == null ? null : number.toFixed(digits);
@@ -1452,16 +1603,104 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 19,
   },
-  watchBtn: {
-    backgroundColor: Palette.accentRed,
-    borderRadius: Radius.md,
-    paddingVertical: 13,
-    alignItems: 'center',
+  eventLinkActions: {
+    gap: 10,
   },
-  watchBtnText: {
+  primaryLinkRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  primaryLinkButton: {
+    flex: 1,
+    minWidth: 0,
+  },
+  eventLinkButton: {
+    borderRadius: Radius.md,
+    paddingVertical: 11,
+    paddingHorizontal: 14,
+    minHeight: 58,
+    justifyContent: 'center',
+    gap: 2,
+  },
+  videoLinkButton: {
+    backgroundColor: alpha(VIDEO_LINK_ACCENT, 0.12),
+    borderWidth: 1,
+    borderLeftWidth: 4,
+    borderColor: alpha(VIDEO_LINK_ACCENT, 0.82),
+    borderLeftColor: VIDEO_LINK_ACCENT,
+    shadowColor: VIDEO_LINK_ACCENT,
+    shadowOpacity: 0.3,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 7 },
+  },
+  infoLinkButton: {
+    backgroundColor: Palette.surfaceRaised,
+    borderWidth: 1,
+    borderLeftWidth: 4,
+    borderColor: alpha(INFO_LINK_ACCENT, 0.58),
+    borderLeftColor: INFO_LINK_ACCENT,
+    shadowColor: INFO_LINK_ACCENT,
+    shadowOpacity: 0.26,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 7 },
+  },
+  eventLinkKicker: {
+    fontSize: 10,
+    lineHeight: 13,
+    fontWeight: '900',
+    letterSpacing: 0,
+    textTransform: 'uppercase',
+  },
+  videoLinkKicker: {
+    color: VIDEO_LINK_ACCENT,
+  },
+  infoLinkKicker: {
+    color: INFO_LINK_ACCENT,
+  },
+  eventLinkText: {
     fontSize: 14,
     fontWeight: '700',
+    lineHeight: 18,
+  },
+  videoLinkText: {
     color: Palette.textPrimary,
+  },
+  infoLinkText: {
+    color: Palette.textPrimary,
+  },
+  otherLinks: {
+    borderWidth: 1,
+    borderColor: alpha(OTHER_LINK_ACCENT, 0.22),
+    borderRadius: Radius.md,
+    backgroundColor: alpha(OTHER_LINK_ACCENT, 0.025),
+    overflow: 'hidden',
+  },
+  otherLinksTitle: {
+    color: alpha(OTHER_LINK_ACCENT, 0.86),
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0,
+    paddingHorizontal: 12,
+    paddingTop: 10,
+    paddingBottom: 6,
+  },
+  otherLinkRow: {
+    minHeight: 42,
+    paddingVertical: 9,
+    paddingHorizontal: 12,
+    borderTopWidth: 1,
+    borderTopColor: alpha(OTHER_LINK_ACCENT, 0.14),
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  otherLinkLabel: {
+    color: OTHER_LINK_TEXT,
+    fontSize: 13,
+    lineHeight: 17,
+    fontWeight: '700',
+    flex: 1,
+    minWidth: 0,
   },
   liveTag: {
     flexDirection: 'row',

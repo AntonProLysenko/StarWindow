@@ -19,14 +19,32 @@ import { useLocalSearchParams } from 'expo-router';
 import { EventCard } from '@/components/events/event-card';
 import { EventModal } from '@/components/events/event-modal';
 import { Palette, Radius } from '@/constants/tokens';
-import { fetchEventsList, type EventListItem } from '@/lib/events-api';
+import { useSharedEvents } from '@/context/events-context';
+import { getEventEmoji } from '@/lib/event-colors';
 import { ALL_EVENT_FILTER, EVENT_FILTER_OPTIONS, filterEvents } from '@/lib/event-icons';
+import type { EventListItem } from '@/lib/events-api';
 import { getOrRequestUserLocation } from '@/utilities/user-location-service';
 import { getUser } from '@/utilities/users-service';
 import { dvw } from '@/utilities/responsive-dimensions';
 
 const PAST_DAYS_TO_SHOW = 365;
 const FUTURE_DAYS_TO_SHOW = 365;
+const ALL = ALL_EVENT_FILTER;
+const FILTER_OPTIONS = EVENT_FILTER_OPTIONS;
+const PRIMARY_FILTERS: Set<string> = new Set(FILTER_OPTIONS);
+const CELESTIAL_TYPE_KEYWORDS = [
+  'eclipse',
+  'occultation',
+  'conjunction',
+  'opposition',
+  'transit',
+  'alignment',
+  'lunar',
+  'solar',
+  'moon',
+  'comet',
+  'asteroid',
+];
 
 type EventRouteParams = {
   eventId?: string | string[];
@@ -38,6 +56,10 @@ type EventRouteParams = {
   description?: string | string[];
   imageUrl?: string | string[];
   location?: string | string[];
+  videoUrl?: string | string[];
+  videoUrls?: string | string[];
+  externalUrl?: string | string[];
+  externalUrls?: string | string[];
   synthetic?: string | string[];
 };
 
@@ -45,10 +67,151 @@ function firstParam(value?: string | string[]) {
   return Array.isArray(value) ? value[0] : value;
 }
 
+function urlArrayParam(value?: string | string[], fallback?: string | null) {
+  const raw = firstParam(value);
+  const urls: string[] = [];
+  const seen = new Set<string>();
+
+  function add(url?: string | null) {
+    const next = String(url ?? '').trim();
+    if (!next || seen.has(next)) return;
+    seen.add(next);
+    urls.push(next);
+  }
+
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        parsed.forEach((url) => add(typeof url === 'string' ? url : null));
+      } else {
+        add(raw);
+      }
+    } catch {
+      add(raw);
+    }
+  }
+  add(fallback);
+
+  return urls;
+}
+
 function normalizeParam(value?: string | null) {
   return (value ?? '').trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
+function getCanonicalFilterOption(option?: string | null) {
+  const normalized = normalizeParam(option);
+  if (normalized === 'celestial event') return 'Celestial Events';
+  if (normalized === 'rocket launch' || normalized === 'launch') return 'Rocket Launch';
+  if (normalized === 'eva') return 'Spacewalk';
+  return option || ALL;
+}
+
+function getFilterLabel(option: string) {
+  const canonicalOption = getCanonicalFilterOption(option);
+  if (canonicalOption === ALL) return '✦ All';
+  return `${getEventEmoji({
+    category: canonicalOption === 'Rocket Launch' ? 'launch' : 'event',
+    type: canonicalOption,
+    name: canonicalOption,
+  })} ${canonicalOption}`;
+}
+
+function eventMatchesFilter(event: EventListItem, filter: string) {
+  const canonicalFilter = getCanonicalFilterOption(filter);
+  if (canonicalFilter === ALL) return true;
+
+  const bucket = getEventFilterBucket(event);
+  if (canonicalFilter === 'Near-Earth Object') {
+    return bucket === 'Near-Earth Object' || bucket === 'Asteroid Flyby' || bucket === 'Comet Flyby';
+  }
+
+  if (PRIMARY_FILTERS.has(canonicalFilter)) {
+    return bucket === canonicalFilter;
+  }
+
+  return getCanonicalFilterOption(event.type) === canonicalFilter;
+}
+
+function isPrimaryFilterType(event: EventListItem) {
+  const type = normalizeParam(event.type);
+  const canonicalType = getCanonicalFilterOption(event.type);
+  return (
+    event.category === 'launch' ||
+    PRIMARY_FILTERS.has(canonicalType) ||
+    type === 'celestial event' ||
+    type === 'eva'
+  );
+}
+
+function getEventFilterBucket(event: EventListItem) {
+  const type = normalizeParam(event.type);
+  const name = normalizeParam(event.name);
+  const typeAndName = `${type} ${name}`;
+
+  if (event.category === 'launch') return 'Rocket Launch';
+  if (isPressEventType(type)) return 'Press Event';
+  if (type.includes('launch')) return 'Rocket Launch';
+  if (isSpacewalkEventType(type)) return 'Spacewalk';
+  if (isMeteorShowerType(type)) return 'Meteor Shower';
+  if (isAsteroidFlybyType(typeAndName)) return 'Asteroid Flyby';
+  if (isCometFlybyType(typeAndName)) return 'Comet Flyby';
+  if (isNearEarthObjectType(type)) return 'Near-Earth Object';
+  if (isSpacecraftEventType(type)) return 'Spacecraft Event';
+  if (isCelestialEventType(type, typeAndName)) return 'Celestial Events';
+
+  return getCanonicalFilterOption(event.type);
+}
+
+function isPressEventType(type: string) {
+  return (
+    type.includes('press') ||
+    type.includes('briefing') ||
+    type.includes('media event') ||
+    type.includes('news conference')
+  );
+}
+
+function isSpacewalkEventType(type: string) {
+  return type === 'eva' || type.includes('spacewalk');
+}
+
+function isMeteorShowerType(type: string) {
+  return type.includes('meteor') && type.includes('shower');
+}
+
+function isAsteroidFlybyType(label: string) {
+  return label.includes('asteroid') && label.includes('flyby');
+}
+
+function isCometFlybyType(label: string) {
+  return label.includes('comet') && label.includes('flyby');
+}
+
+function isNearEarthObjectType(type: string) {
+  return type.includes('near-earth');
+}
+
+function isSpacecraftEventType(type: string) {
+  return (
+    type.includes('spacecraft') ||
+    type.includes('docking') ||
+    type.includes('undocking') ||
+    type.includes('berthing') ||
+    type.includes('capture') ||
+    type.includes('release') ||
+    type.includes('reentry') ||
+    type.includes('landing')
+  );
+}
+
+function isCelestialEventType(type: string, typeAndName: string) {
+  return (
+    type === 'celestial event' ||
+    CELESTIAL_TYPE_KEYWORDS.some((keyword) => typeAndName.includes(keyword))
+  );
+}
 function getEventRouteKey(params: EventRouteParams) {
   return [
     firstParam(params.eventId),
@@ -115,6 +278,10 @@ function buildDashboardPreviewEvent(params: EventRouteParams): EventListItem | n
   if (!name) return null;
 
   const category = firstParam(params.category) === 'launch' ? 'launch' : 'event';
+  const videoUrl = firstParam(params.videoUrl) ?? null;
+  const externalUrl = firstParam(params.externalUrl) ?? null;
+  const videoUrls = urlArrayParam(params.videoUrls, videoUrl);
+  const externalUrls = urlArrayParam(params.externalUrls, externalUrl);
 
   return {
     id: `dashboard-${normalizeParam(type)}-${normalizeParam(name)}`,
@@ -130,7 +297,10 @@ function buildDashboardPreviewEvent(params: EventRouteParams): EventListItem | n
     latitude: null,
     longitude: null,
     webcast_live: false,
-    video_url: null,
+    video_url: videoUrls[0] ?? null,
+    video_urls: videoUrls,
+    external_url: externalUrls[0] ?? null,
+    external_urls: externalUrls,
     launch_details: null,
   };
 }
@@ -138,9 +308,7 @@ function buildDashboardPreviewEvent(params: EventRouteParams): EventListItem | n
 export default function EventsScreen() {
   const routeParams = useLocalSearchParams<EventRouteParams>();
   const routeEventKey = getEventRouteKey(routeParams);
-  const [events, setEvents] = useState<EventListItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { events, isLoading: loading, error } = useSharedEvents();
   const [activeType, setActiveType] = useState<string>(ALL_EVENT_FILTER);
   const listRef = useRef<ScrollView>(null);
   const [upcomingAnchorY, setUpcomingAnchorY] = useState<number | null>(null);
@@ -167,35 +335,35 @@ export default function EventsScreen() {
     })();
   }, []);
 
-  // Fetch once on mount. AbortController cancels the request if we unmount first.
-  useEffect(() => {
-    const controller = new AbortController();
-    (async () => {
-      try {
-        setLoading(true);
-        setError(null);
-        const data = await fetchEventsList({
-          includePast: true,
-          pastDays: PAST_DAYS_TO_SHOW,
-          futureDays: FUTURE_DAYS_TO_SHOW,
-          signal: controller.signal,
-        });
-        setEvents(data);
-      } catch (err) {
-        if ((err as Error).name !== 'AbortError') {
-          setError('Could not load events. Please try again.');
-        }
-      } finally {
-        setLoading(false);
-      }
-    })();
-    return () => controller.abort();
-  }, []);
-
   // Filter options are derived from the types actually present in the data,
   // with "All" always first. Order preserves first-seen (already chronological).
   // Client-side filtering only — no re-fetch. Data is already sorted soonest-first.
-  const visibleEvents = useMemo(() => filterEvents(events, activeType), [events, activeType]);
+  const filterOptions = useMemo(() => {
+    const extraTypes: string[] = [];
+    const seen = new Set(PRIMARY_FILTERS);
+
+    for (const event of events) {
+      const option = getCanonicalFilterOption(event.type);
+      if (!event.type || seen.has(option)) continue;
+      if (isPrimaryFilterType(event)) continue;
+      seen.add(option);
+      extraTypes.push(option);
+    }
+
+    return [...FILTER_OPTIONS, ...extraTypes];
+  }, [events]);
+
+  useEffect(() => {
+    const canonicalActiveType = getCanonicalFilterOption(activeType);
+    if (canonicalActiveType !== activeType && filterOptions.includes(canonicalActiveType)) {
+      setActiveType(canonicalActiveType);
+    }
+  }, [activeType, filterOptions]);
+
+  const visibleEvents = useMemo(() => {
+    if (activeType === ALL_EVENT_FILTER) return events;
+    return events.filter((event) => eventMatchesFilter(event, activeType));
+  }, [events, activeType]);
 
   const { pastEvents, upcomingEvents } = useMemo(() => {
     const now = Date.now();
@@ -258,7 +426,7 @@ export default function EventsScreen() {
           showsHorizontalScrollIndicator={false}
           style={styles.filterBar}
           contentContainerStyle={styles.filterBarContent}>
-          {EVENT_FILTER_OPTIONS.map((option) => {
+          {filterOptions.map((option) => {
             const active = option === activeType;
             return (
               <Pressable
@@ -266,7 +434,7 @@ export default function EventsScreen() {
                 onPress={() => setActiveType(option)}
                 style={[styles.filterPill, active && styles.filterPillActive]}>
                 <Text style={[styles.filterPillText, active && styles.filterPillTextActive]}>
-                  {option}
+                  {getFilterLabel(option)}
                 </Text>
               </Pressable>
             );

@@ -21,8 +21,7 @@ router.get("/", async (req, res) => {
 
 // GET /api/events/list
 // Unified upcoming list: space events + rocket launches merged into one array,
-// normalized to a common shape and sorted soonest-first. Reads CACHED DB data
-// only (no external API calls on this route).
+// normalized to a common shape and sorted soonest-first.
 router.get("/list", async (req, res) => {
   try {
     const includePast = String(req.query.include_past ?? "").toLowerCase() === "true";
@@ -38,7 +37,7 @@ router.get("/list", async (req, res) => {
   }
 });
 
-// GET /api/events/spacewalks?limit=  (live only — no spacewalk table yet)
+// GET /api/events/spacewalks?limit=  (cached EVA/spacewalk rows from events)
 router.get("/spacewalks", async (req, res) => {
   const { limit = 5, from_date, to_date } = req.query;
   try {

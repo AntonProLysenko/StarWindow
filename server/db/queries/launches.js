@@ -60,7 +60,7 @@ async function getCachedLaunches(opts = {}) {
       SELECT
         rl.launch_id, rl.event_id, rl.name, rl.status, rl.net_precision,
         rl.image_url, rl.cached_at,
-        e.start_time AS net, e.date_precision, e.webcast_live, e.video_url,
+        e.start_time AS net, e.date_precision, e.webcast_live, e.video_url, e.info_url,
         m.name AS mission_name, m.mission_type, m.description AS mission_description,
         r.model AS rocket_model, r.manufacture AS rocket_manufacturer,
         p.name AS provider_name,
@@ -97,7 +97,7 @@ async function getUpcomingLaunches(limit = 200) {
         SELECT DISTINCT ON (rl.name, e.start_time)
           rl.launch_id, rl.event_id, rl.name, rl.status, rl.net_precision,
           rl.image_url,
-          e.start_time AS net, e.date_precision, e.webcast_live, e.video_url,
+          e.start_time AS net, e.date_precision, e.webcast_live, e.video_url, e.info_url,
           m.name AS mission_name, m.mission_type, m.description AS mission_description,
           r.model AS rocket_model,
           p.name AS provider_name,
@@ -141,7 +141,7 @@ async function findLaunchByName(name) {
  *
  * @param {object} eventData - base event fields:
  *   { name, startTime, endTime, datePrecision, description, eventType,
- *     webcastLive, videoUrl, imageUrl }
+   *     webcastLive, videoUrl, infoUrl, imageUrl }
  * @param {object} launchData - launch-specific fields:
  *   { name, status, netPrecision, imageUrl,
  *     mission:{name, missionType, description},
@@ -214,7 +214,10 @@ async function refreshLaunchByName(name, eventData, launchData) {
           end_time = $3,
           date_precision = $4,
           description = $5,
-          image_url = $6
+          webcast_live = $6,
+          video_url = $7,
+          info_url = $8,
+          image_url = $9
       WHERE event_id = $1
     `,
     [
@@ -223,6 +226,9 @@ async function refreshLaunchByName(name, eventData, launchData) {
       eventData.endTime || null,
       eventData.datePrecision || null,
       eventData.description || null,
+      eventData.webcastLive ?? false,
+      eventData.videoUrl || null,
+      eventData.infoUrl || null,
       eventData.imageUrl || null,
     ]
   );

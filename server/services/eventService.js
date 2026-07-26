@@ -5,13 +5,26 @@ const eventQueries = require("../db/queries/events");
 const launchQueries = require("../db/queries/launches");
 const locationQueries = require("../db/queries/locations");
 const meteorService = require("./meteorService");
+const smallBodyService = require("./smallBodyService");
 const { isCacheStale, TTL_MINUTES } = require("../middleware/cache");
 
-const LL2_BASE = "https://lldev.thespacedevs.com/2.3.0";
+const LL2_BASE = "https://ll.thespacedevs.com/2.3.0";
 const DEFAULT_EVENT_TYPE = "Space Event";
 const EVENTS_PAGE_SIZE = 100;
+const LL2_THROTTLE_COOLDOWN_MS = 60 * 60 * 1000;
+const SMALL_BODY_REFRESH_COOLDOWN_MS = 6 * 60 * 60 * 1000;
+const SMALL_BODY_TTL_MINUTES = 6 * 60;
+const SMALL_BODY_EVENT_TYPES = ["Asteroid Flyby", "Comet Flyby"];
+const SMALL_BODY_TIMELINE_PAST_LIMIT = 30;
+const SMALL_BODY_TIMELINE_FUTURE_LIMIT = 60;
+const METEOR_SHOWER_EVENT_TYPE = "Meteor Shower";
+let eventsRefreshBlockedUntil = 0;
+const smallBodyRefreshes = new Map();
 
 function mapCachedEvent(row) {
+  const videoUrls = parseUrlList(row.video_url);
+  const externalUrls = parseUrlList(row.info_url);
+
   return {
     id: row.event_id,
     event_id: row.event_id,
@@ -26,9 +39,32 @@ function mapCachedEvent(row) {
     latitude: null,
     longitude: null,
     webcast_live: row.webcast_live,
-    video_url: row.video_url || null,
-    video_urls: row.video_url ? [row.video_url] : [],
+    video_url: videoUrls[0] || null,
+    video_urls: videoUrls,
+    external_url: externalUrls[0] || null,
+    external_urls: externalUrls,
     image_url: row.image_url,
+  };
+}
+
+function mapCachedSpacewalkEvent(row) {
+  const videoUrls = parseUrlList(row.video_url);
+  const externalUrls = parseUrlList(row.info_url);
+
+  return {
+    name: row.name,
+    start: row.start_time,
+    end: row.end_time || null,
+    duration: null,
+    location: row.location_name || null,
+    space_station: row.location_name || null,
+    description: row.description || null,
+    image_url: row.image_url || null,
+    video_url: videoUrls[0] || null,
+    video_urls: videoUrls,
+    info_url: externalUrls[0] || null,
+    external_urls: externalUrls,
+    crew: extractEvaCrew(row.description).map((name) => ({ name })),
   };
 }
 
@@ -118,7 +154,12 @@ async function normalizeExternalEvent(event) {
   const location = event.location
     ? await locationQueries.findOrCreateLocationByName(event.location)
     : null;
-  const primaryVideo = Array.isArray(event.vid_urls) ? event.vid_urls[0] : null;
+  const videoUrls = collectUrls(event.vid_urls);
+  const externalUrls = collectUrls(
+    event.info_urls,
+    updateInfoUrls(event.updates),
+    spacecraftFallbackLinks({ name: event.name, type: event.type?.name })
+  );
 
   return {
     name: event.name,
@@ -128,80 +169,69 @@ async function normalizeExternalEvent(event) {
     description: event.description || null,
     eventType: event.type?.name || DEFAULT_EVENT_TYPE,
     webcastLive: event.webcast_live ?? false,
-    videoUrl: primaryVideo?.url || null,
+    videoUrl: videoUrls[0] || null,
+    infoUrl: externalUrls[0] || null,
     imageUrl: event.image?.image_url || event.image?.thumbnail_url || null,
     locationId: location?.location_id || null,
   };
 }
 
 /**
- * Get recent spacewalks (EVAs).
- *
- * NOTE: there is no spacewalk table in the schema, so this is NOT persisted.
+ * Get cached spacewalk/EVA events from the events table.
  * @param {object} opts
  * @param {number} [opts.limit=5]
  * @param {string} [opts.fromDate]
  * @param {string} [opts.toDate]
  */
 async function getSpacewalks({ limit = 5, fromDate, toDate } = {}) {
-  const params = new URLSearchParams({
-    limit: String(limit),
-    ordering: "-start",
+  await refreshExternalEventsForWindow({
+    fromDate: fromDate || new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString(),
+    toDate: toDate || new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
   });
-  if (fromDate) params.set("start__gte", toStartOfDay(fromDate));
-  if (toDate) params.set("start__lte", toEndOfDay(toDate));
 
-  const response = await fetch(`${LL2_BASE}/spacewalks/?${params}`);
-  if (!response.ok) {
-    const err = new Error(`LL2 API returned ${response.status}`);
-    err.status = response.status;
-    throw err;
-  }
+  const rows = await eventQueries.getCachedSpacewalkEvents({
+    limit,
+    fromDate,
+    toDate,
+    includePast: !fromDate,
+  });
 
-  const data = await response.json();
-
-  const spacewalks = (data.results || []).map((s) => ({
-    name: s.name,
-    start: s.start,
-    end: s.end,
-    duration: s.duration,
-    location: s.location,
-    space_station: s.space_station?.name || null,
-    crew: (s.crew || []).map((c) => ({
-      name: c.astronaut?.name,
-      nationality: c.astronaut?.nationality,
-      role: c.role?.role,
-    })),
-  }));
-
-  return { count: data.count, results: spacewalks };
+  return {
+    count: rows.length,
+    results: rows.map(mapCachedSpacewalkEvent),
+  };
 }
 
 /**
- * Build the unified upcoming-events list from CACHED DB data only (no external
- * API calls). Merges space events and rocket launches into one normalized array,
+ * Build the unified upcoming-events list from cached DB data. Merges space
+ * events and rocket launches into one normalized array,
  * sorted chronologically (soonest first). Consumed by GET /api/events/list.
  *
  * Normalized item:
  *   { id, event_id, category: "event"|"launch", name, type, date, date_precision,
  *     description, image_url, location, latitude, longitude, webcast_live,
- *     video_url, launch_details }
+ *     video_url, external_url, launch_details }
  *
  * @returns {Promise<Array<object>>}
  */
 async function getUpcomingList() {
   const now = new Date();
   const nextYear = new Date(now.getTime() + 365 * 24 * 60 * 60 * 1000);
+  await refreshExternalEventsForWindow({
+    fromDate: now.toISOString(),
+    toDate: nextYear.toISOString(),
+  });
+
   const [events, launches] = await Promise.all([
     eventQueries.getUpcomingNonLaunchEvents(),
     launchQueries.getUpcomingLaunches(),
   ]);
-  const meteorShowers = meteorService.getMeteorShowers({
+  const meteorShowers = await attachSavedEventIdsToMeteorShowers(meteorService.getMeteorShowers({
     fromDate: now.toISOString(),
     toDate: nextYear.toISOString(),
-  }).results;
+  }).results);
 
-  const normalizedEvents = events.map((e) => ({
+  const normalizedEvents = events.filter((e) => !isMeteorShowerEventType(e.event_type)).map((e) => ({
     id: e.event_id,
     // event_id is the FK target for saving (user_events.event_id). For plain
     // events it equals id; kept as its own field so the client never has to know
@@ -218,7 +248,7 @@ async function getUpcomingList() {
     latitude: null, // LL2 /events/ gives a free-text location with no coords
     longitude: null,
     webcast_live: e.webcast_live ?? false,
-    video_url: e.video_url || null,
+    ...normalizeCachedLinks(e),
     launch_details: null,
   }));
 
@@ -239,7 +269,7 @@ async function getUpcomingList() {
     latitude: l.pad_lat != null ? Number(l.pad_lat) : null,
     longitude: l.pad_lon != null ? Number(l.pad_lon) : null,
     webcast_live: l.webcast_live ?? false,
-    video_url: l.video_url || null,
+    ...normalizeCachedLinks(l),
     launch_details: {
       rocket_model: l.rocket_model || null,
       provider: l.provider_name || null,
@@ -251,8 +281,10 @@ async function getUpcomingList() {
     },
   }));
 
+  const displayEvents = dedupeEventListItems(normalizedEvents);
+
   // Merge, then sort chronologically. Items with a missing/invalid date sort last.
-  return [...normalizedEvents, ...normalizedLaunches, ...meteorShowers].sort((a, b) => {
+  return [...displayEvents, ...normalizedLaunches, ...meteorShowers].sort((a, b) => {
     const ta = a.date ? new Date(a.date).getTime() : Infinity;
     const tb = b.date ? new Date(b.date).getTime() : Infinity;
     return ta - tb;
@@ -265,11 +297,16 @@ async function getTimelineList({ includePast = false, pastDays = 365, futureDays
   const now = new Date();
   const windowStart = new Date(now.getTime() - pastDays * 24 * 60 * 60 * 1000);
   const windowEnd = new Date(now.getTime() + futureDays * 24 * 60 * 60 * 1000);
+  await refreshExternalEventsForWindow({
+    fromDate: windowStart.toISOString(),
+    toDate: windowEnd.toISOString(),
+  });
+
   const [events, launches] = await Promise.all([
     eventQueries.getNonLaunchEventsInWindow({
       fromDate: windowStart.toISOString(),
       toDate: windowEnd.toISOString(),
-      limit: 400,
+      limit: null,
     }),
     launchQueries.getCachedLaunches({
       fromDate: windowStart.toISOString(),
@@ -277,12 +314,17 @@ async function getTimelineList({ includePast = false, pastDays = 365, futureDays
       limit: 400,
     }),
   ]);
-  const meteorShowers = meteorService.getMeteorShowers({
+  const meteorShowers = await attachSavedEventIdsToMeteorShowers(meteorService.getMeteorShowers({
     fromDate: windowStart.toISOString(),
     toDate: windowEnd.toISOString(),
-  }).results;
+  }).results);
 
-  const normalizedEvents = events.map((e) => ({
+  const timelineEvents = limitSmallBodyTimelineEvents(
+    events.filter((e) => !isMeteorShowerEventType(e.event_type)),
+    now
+  );
+
+  const normalizedEvents = timelineEvents.map((e) => ({
     id: e.event_id,
     event_id: e.event_id,
     category: "event",
@@ -296,7 +338,7 @@ async function getTimelineList({ includePast = false, pastDays = 365, futureDays
     latitude: null,
     longitude: null,
     webcast_live: e.webcast_live ?? false,
-    video_url: e.video_url || null,
+    ...normalizeCachedLinks(e),
     launch_details: null,
   }));
 
@@ -314,7 +356,7 @@ async function getTimelineList({ includePast = false, pastDays = 365, futureDays
     latitude: l.pad_lat != null ? Number(l.pad_lat) : null,
     longitude: (l.pad_lon ?? l.pad_long) != null ? Number(l.pad_lon ?? l.pad_long) : null,
     webcast_live: l.webcast_live ?? false,
-    video_url: l.video_url || null,
+    ...normalizeCachedLinks(l),
     launch_details: {
       rocket_model: l.rocket_model || null,
       provider: l.provider_name || null,
@@ -326,7 +368,9 @@ async function getTimelineList({ includePast = false, pastDays = 365, futureDays
     },
   }));
 
-  return [...normalizedEvents, ...normalizedLaunches, ...meteorShowers].sort((a, b) => {
+  const displayEvents = dedupeEventListItems(normalizedEvents);
+
+  return [...displayEvents, ...normalizedLaunches, ...meteorShowers].sort((a, b) => {
     const ta = a.date ? new Date(a.date).getTime() : Infinity;
     const tb = b.date ? new Date(b.date).getTime() : Infinity;
     return ta - tb;
@@ -334,6 +378,286 @@ async function getTimelineList({ includePast = false, pastDays = 365, futureDays
 }
 
 module.exports = { getEvents, getSpacewalks, getUpcomingList, getTimelineList };
+
+async function refreshExternalEventsForWindow({ fromDate, toDate }) {
+  const cachedAt = await eventQueries.getLatestCachedAt({ fromDate, toDate });
+  const shouldRefreshLl2 = isCacheStale(cachedAt, TTL_MINUTES.EVENTS) && Date.now() >= eventsRefreshBlockedUntil;
+
+  if (shouldRefreshLl2) {
+    try {
+      await cacheExternalEvents({ fromDate, toDate });
+    } catch (error) {
+      if (error.status === 429 || /throttled/i.test(error.message)) {
+        eventsRefreshBlockedUntil = Date.now() + LL2_THROTTLE_COOLDOWN_MS;
+      }
+      console.warn("LL2 events refresh failed; returning cached events:", error.message);
+    }
+  }
+
+  await refreshSmallBodyEventsForWindow({ fromDate, toDate });
+}
+
+async function refreshSmallBodyEventsForWindow({ fromDate, toDate }) {
+  const key = `${toDateKey(fromDate)}|${toDateKey(toDate)}`;
+  const lastRefresh = smallBodyRefreshes.get(key) || 0;
+  if (Date.now() - lastRefresh < SMALL_BODY_REFRESH_COOLDOWN_MS) return;
+
+  const latestCachedAt = await eventQueries.getLatestCachedAtForEventTypes({
+    fromDate,
+    toDate,
+    eventTypes: SMALL_BODY_EVENT_TYPES,
+  });
+  if (latestCachedAt && !isCacheStale(latestCachedAt, SMALL_BODY_TTL_MINUTES)) {
+    smallBodyRefreshes.set(key, Date.now());
+    return;
+  }
+
+  if (latestCachedAt) {
+    smallBodyRefreshes.set(key, Date.now());
+    runSmallBodyRefresh({ fromDate, toDate, key }).catch((error) => {
+      console.warn("JPL small-body background refresh failed:", error.message);
+    });
+    return;
+  }
+
+  await runSmallBodyRefresh({ fromDate, toDate, key });
+}
+
+async function runSmallBodyRefresh({ fromDate, toDate, key }) {
+  try {
+    const flybys = await smallBodyService.fetchSmallBodyFlybys({ fromDate, toDate });
+    let saved = 0;
+
+    for (const flyby of flybys) {
+      try {
+        await eventQueries.saveEvent(flyby);
+        saved++;
+      } catch (error) {
+        console.error(`Failed to cache small-body event "${flyby.name}":`, error.message);
+      }
+    }
+
+    smallBodyRefreshes.set(key, Date.now());
+    if (flybys.length > 0) {
+      console.log(`\n=== JPL SMALL-BODY CACHE FILL ===\n    Fetched: ${flybys.length}\n    Saved/skipped idempotently: ${saved}`);
+    }
+  } catch (error) {
+    smallBodyRefreshes.set(key, Date.now() - SMALL_BODY_REFRESH_COOLDOWN_MS + 60 * 60 * 1000);
+    console.warn("JPL small-body refresh failed; returning cached events:", error.message);
+  }
+}
+
+function limitSmallBodyTimelineEvents(events, now) {
+  const smallBody = [];
+  const rest = [];
+
+  for (const event of events) {
+    if (isSmallBodyEventType(event.event_type)) {
+      smallBody.push(event);
+    } else {
+      rest.push(event);
+    }
+  }
+
+  const nowMs = now.getTime();
+  const past = smallBody.filter((event) => new Date(event.start_time).getTime() < nowMs);
+  const future = smallBody.filter((event) => new Date(event.start_time).getTime() >= nowMs);
+
+  return [
+    ...rest,
+    ...past.slice(-SMALL_BODY_TIMELINE_PAST_LIMIT),
+    ...future.slice(0, SMALL_BODY_TIMELINE_FUTURE_LIMIT),
+  ].sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
+}
+
+function isSmallBodyEventType(type) {
+  return SMALL_BODY_EVENT_TYPES.includes(String(type || ""));
+}
+
+async function attachSavedEventIdsToMeteorShowers(meteorShowers) {
+  const persisted = [];
+
+  for (const shower of meteorShowers) {
+    try {
+      const saved = await eventQueries.saveEvent({
+        name: shower.name,
+        startTime: shower.date,
+        endTime: null,
+        datePrecision: shower.date_precision || "Day",
+        description: shower.description || null,
+        eventType: METEOR_SHOWER_EVENT_TYPE,
+        webcastLive: false,
+        videoUrl: null,
+        infoUrl: shower.external_url || null,
+        imageUrl: shower.image_url || null,
+        locationId: null,
+      });
+
+      persisted.push({
+        ...shower,
+        id: saved.event_id,
+        event_id: saved.event_id,
+      });
+    } catch (error) {
+      console.error(`Failed to persist meteor shower "${shower.name}":`, error.message);
+      persisted.push(shower);
+    }
+  }
+
+  return persisted;
+}
+
+function isMeteorShowerEventType(type) {
+  return String(type || "") === METEOR_SHOWER_EVENT_TYPE;
+}
+
+function dedupeEventListItems(events) {
+  const bestByKey = new Map();
+
+  for (const event of events) {
+    const day = event.date ? String(event.date).slice(0, 10) : "";
+    const key = `${slugify(event.name || "")}|${slugify(event.type || "")}|${day}`;
+    const current = bestByKey.get(key);
+    if (!current || eventLinkScore(event) > eventLinkScore(current)) {
+      bestByKey.set(key, event);
+    }
+  }
+
+  return [...bestByKey.values()];
+}
+
+function eventLinkScore(event) {
+  return ((event.video_urls?.length || (event.video_url ? 1 : 0)) * 2) +
+    (event.external_urls?.length || (event.external_url ? 1 : 0)) +
+    (event.image_url ? 0.5 : 0);
+}
+
+function extractEvaCrew(description) {
+  const text = String(description || "").trim();
+  if (!text) return [];
+
+  const match = text.match(
+    /(?:NASA\s+)?astronauts?\s+(.+?)\s+will\b|(?:Russian\s+)?cosmonauts?\s+(.+?)\s+will\b/i
+  );
+  const namesText = match?.[1] || match?.[2];
+  if (!namesText) return [];
+
+  return namesText
+    .replace(/\s+and\s+/gi, ", ")
+    .split(",")
+    .map((name) => name.trim())
+    .filter(Boolean);
+}
+
+function firstUrl(value) {
+  return collectUrls(value)[0] || null;
+}
+
+function updateInfoUrls(updates) {
+  if (!Array.isArray(updates)) return null;
+  return updates.map((item) => item?.info_url).filter(Boolean);
+}
+
+function firstUpdateInfoUrl(updates) {
+  return updateInfoUrls(updates)?.[0] || null;
+}
+
+function collectUrls(...groups) {
+  const urls = [];
+  const seen = new Set();
+
+  for (const group of groups) {
+    const items = Array.isArray(group) ? group : group ? [group] : [];
+    for (const item of items) {
+      const url = typeof item === "string" ? item : item?.url || item?.info_url;
+      if (!url || seen.has(url)) continue;
+      seen.add(url);
+      urls.push(url);
+    }
+  }
+
+  return urls;
+}
+
+function serializeUrlList(urls) {
+  const cleanUrls = collectUrls(urls);
+  if (cleanUrls.length === 0) return null;
+  if (cleanUrls.length === 1) return cleanUrls[0];
+  return JSON.stringify(cleanUrls);
+}
+
+function parseUrlList(value) {
+  if (!value) return [];
+  if (Array.isArray(value)) return collectUrls(value);
+  const text = String(value).trim();
+  if (!text) return [];
+
+  if (text.startsWith("[")) {
+    try {
+      return collectUrls(JSON.parse(text));
+    } catch {
+      return [text];
+    }
+  }
+
+  return [text];
+}
+
+function normalizeCachedLinks(row) {
+  const videoUrls = parseUrlList(row.video_url);
+  const externalUrls = collectUrls(
+    parseUrlList(row.info_url),
+    spacecraftFallbackLinks({ name: row.name, type: row.event_type || row.type })
+  );
+  return {
+    video_url: videoUrls[0] || null,
+    video_urls: videoUrls,
+    external_url: externalUrls[0] || null,
+    external_urls: externalUrls,
+  };
+}
+
+function spacecraftFallbackLinks({ name, type }) {
+  const text = `${type || ""} ${name || ""}`.toLowerCase();
+  const links = [];
+
+  if (
+    !text.includes("spacecraft") &&
+    !text.includes("docking") &&
+    !text.includes("undocking") &&
+    !text.includes("berthing") &&
+    !text.includes("release") &&
+    !text.includes("reentry") &&
+    !text.includes("landing")
+  ) {
+    return links;
+  }
+
+  if (text.includes("starliner") || text.includes("boeing")) {
+    links.push(
+      "https://www.boeing.com/content/theboeingcompany/us/en/space/starliner.html",
+      "https://www.nasa.gov/blogs/commercialcrew/2025/11/24/nasa-boeing-modify-commercial-crew-contract/"
+    );
+  }
+
+  if (text.includes("dream chaser") || text.includes("snc-1") || text.includes("sierra")) {
+    links.push(
+      "https://www.nasa.gov/missions/station/commercial-resupply/sierra-spaces-dream-chaser-new-station-resupply-spacecraft-for-nasa/",
+      "https://www.nasa.gov/missions/station/nasa-sierra-space-modify-commercial-resupply-services-contract/",
+      "https://www.faa.gov/space/stakeholder_engagement/shuttle_landing_facility/sierra_operations"
+    );
+  }
+
+  return links;
+}
+
+function slugify(value) {
+  return String(value)
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
 
 function toStartOfDay(value) {
   return isDateOnly(value) ? `${value}T00:00:00Z` : value;
@@ -345,4 +669,8 @@ function toEndOfDay(value) {
 
 function isDateOnly(value) {
   return /^\d{4}-\d{2}-\d{2}$/.test(String(value));
+}
+
+function toDateKey(value) {
+  return String(value || "").slice(0, 10);
 }

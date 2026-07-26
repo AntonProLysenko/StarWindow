@@ -1,13 +1,13 @@
 // Launch-specific detail section for the event modal (rocket, provider, mission,
-// pad, status). Styled with the launch accent (red) used on launch cards.
+// pad, status).
 // Standalone so a future detail page can reuse it.
 
 import { StyleSheet, Text, View } from 'react-native';
 
-import { Palette, Radius } from '@/constants/tokens';
+import { Palette, Radius, alpha } from '@/constants/tokens';
 import type { LaunchDetails } from '@/lib/events-api';
 
-const LAUNCH_ACCENT = Palette.accentRed;
+const LAUNCH_ACCENT = '#FFB000';
 
 function Row({ label, value }: { label: string; value: string | null }) {
   if (!value) return null;
@@ -41,9 +41,9 @@ export function LaunchDetailsSection({ details }: { details: LaunchDetails }) {
 
 const styles = StyleSheet.create({
   section: {
-    backgroundColor: LAUNCH_ACCENT + '10',
+    backgroundColor: alpha(LAUNCH_ACCENT, 0.08),
     borderWidth: 1,
-    borderColor: LAUNCH_ACCENT + '33',
+    borderColor: alpha(LAUNCH_ACCENT, 0.34),
     borderLeftWidth: 3,
     borderLeftColor: LAUNCH_ACCENT,
     borderRadius: Radius.md,

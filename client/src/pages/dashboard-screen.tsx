@@ -4,7 +4,7 @@
 // moon-phase hero, and preview cards for each tab.
 // All colors/spacing/radii come from @/constants/tokens.
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -22,12 +22,11 @@ import { ShootingStar } from '@/components/shooting-star';
 import { SoundToggle } from '@/components/sound-toggle';
 import { MonthGrid } from '@/components/calendar/month-grid';
 import { StarMap } from '@/components/star-map';
-import { useCalendarEvents } from '@/hooks/use-calendar-events';
+import { useSharedEvents } from '@/context/events-context';
+import type { EventListItem } from '@/lib/events-api';
 import { fetchVisibleBodies, type VisibleBody } from '@/utilities/bodies-api';
 import {
-  fetchNextUpcomingSpacewalk,
-  fetchNextUpcomingLaunch,
-  fetchNextUpcomingMeteorShower,
+  eventListItemToCalendarEvent,
   getCalendarEventsForMonth,
   getNextCalendarEvent,
   type CalendarEvent,
@@ -165,6 +164,116 @@ function formatLaunchMeta(launch: UpcomingLaunch | null) {
   ].filter(Boolean);
 
   return detailParts.join(' | ') || 'Upcoming rocket launch.';
+}
+
+function getEventTime(event: EventListItem) {
+  if (!event.date) return Infinity;
+  const time = new Date(event.date).getTime();
+  return Number.isNaN(time) ? Infinity : time;
+}
+
+function getNextSharedEvent(events: EventListItem[], predicate: (event: EventListItem) => boolean) {
+  const now = Date.now();
+  return events
+    .filter((event) => predicate(event) && getEventTime(event) >= now)
+    .sort((a, b) => getEventTime(a) - getEventTime(b))[0] ?? null;
+}
+
+function getLatestSharedEvent(events: EventListItem[], predicate: (event: EventListItem) => boolean) {
+  const now = Date.now();
+  return events
+    .filter((event) => predicate(event) && getEventTime(event) < now)
+    .sort((a, b) => getEventTime(b) - getEventTime(a))[0] ?? null;
+}
+
+function isMeteorShowerEvent(event: EventListItem) {
+  const type = `${event.type ?? ''}`.toLowerCase();
+  return type.includes('meteor') && type.includes('shower');
+}
+
+function isSpacewalkEvent(event: EventListItem) {
+  const type = `${event.type ?? ''}`.toLowerCase();
+  return type === 'eva' || type.includes('spacewalk');
+}
+
+function toUpcomingLaunch(event: EventListItem | null): UpcomingLaunch | null {
+  if (!event) return null;
+  const details = event.launch_details;
+
+  return {
+    id: event.id,
+    launch_id: event.id,
+    event_id: event.event_id,
+    name: event.name,
+    status: details?.status ?? undefined,
+    net: event.date ?? undefined,
+    net_precision: event.date_precision ?? undefined,
+    mission: {
+      name: details?.mission_name ?? event.name,
+      type: details?.mission_type ?? undefined,
+      description: event.description ?? null,
+    },
+    pad: {
+      name: details?.pad_name ?? event.location ?? undefined,
+      location: details?.pad_location ?? event.location ?? undefined,
+      latitude: event.latitude,
+      longitude: event.longitude,
+    },
+    provider: details?.provider ?? undefined,
+    rocket: details?.rocket_model ?? undefined,
+    webcast_live: event.webcast_live,
+    video_url: event.video_url,
+    video_urls: event.video_urls,
+    external_url: event.external_url,
+    external_urls: event.external_urls,
+    image: event.image_url,
+  };
+}
+
+function toUpcomingMeteorShower(event: EventListItem | null): UpcomingMeteorShower | null {
+  if (!event) return null;
+
+  return {
+    id: event.id,
+    event_id: event.event_id,
+    category: event.category,
+    name: event.name,
+    type: event.type,
+    date: event.date ?? undefined,
+    date_precision: event.date_precision ?? undefined,
+    location: event.location,
+    description: event.description,
+    webcast_live: event.webcast_live,
+    video_url: event.video_url,
+    video_urls: event.video_urls,
+    external_url: event.external_url,
+    external_urls: event.external_urls,
+    image_url: event.image_url,
+    radiant: event.radiant,
+    radiant_declination_degrees: event.radiant_declination_degrees,
+    zhr: event.zhr,
+    active_start: event.active_start,
+    active_end: event.active_end,
+    peak_date: event.peak_date,
+    best_time: event.best_time,
+    moon_age_days: event.moon_age_days,
+    radiant_max_altitude_degrees: event.radiant_max_altitude_degrees,
+  };
+}
+
+function toUpcomingSpacewalk(event: EventListItem | null, status: UpcomingSpacewalk['schedule_status']): UpcomingSpacewalk | null {
+  if (!event) return null;
+
+  return {
+    name: event.name,
+    start: event.date ?? undefined,
+    location: event.location,
+    space_station: event.location,
+    description: event.description,
+    image_url: event.image_url,
+    schedule_status: status,
+    crew: [],
+  };
 }
 
 function formatIssTime(value?: string | null) {
@@ -419,8 +528,14 @@ function formatMeteorMeta(shower: UpcomingMeteorShower | null, hasLocation: bool
 }
 
 function joinDashboardMeta(parts: (string | null | undefined)[]) {
-  return parts
-    .filter((part): part is string => Boolean(part))
+  return keepPipeGroupsTogether(parts.filter((part): part is string => Boolean(part)).join(' | '));
+}
+
+function keepPipeGroupsTogether(value: string) {
+  if (!value.includes('|')) return value;
+  return value
+    .split(/\s*\|\s*/)
+    .filter(Boolean)
     .map((part) => part.replace(/\s+/g, '\u00A0'))
     .join('\u00A0|\u00A0');
 }
@@ -474,6 +589,7 @@ function formatSpacewalkMeta(spacewalk: UpcomingSpacewalk | null) {
     `${prefix} ${formatSpacewalkDate(spacewalk.start)}`,
     spacewalk.space_station,
     getSpacewalkCrew(spacewalk) ? `Crew: ${getSpacewalkCrew(spacewalk)}` : null,
+    !getSpacewalkCrew(spacewalk) ? spacewalk.description : null,
   ].filter(Boolean);
 
   return details.join(' | ') || 'Upcoming spacewalk details unavailable.';
@@ -527,6 +643,10 @@ type EventDetailRouteParams = {
   description?: string | null;
   imageUrl?: string | null;
   location?: string | null;
+  videoUrl?: string | null;
+  videoUrls?: string[] | null;
+  externalUrl?: string | null;
+  externalUrls?: string[] | null;
   synthetic?: boolean;
 };
 
@@ -535,7 +655,7 @@ function eventDetailRoute(input: EventDetailRouteParams) {
 
   for (const [key, value] of Object.entries(input)) {
     if (value === null || value === undefined || value === '') continue;
-    params[key] = String(value);
+    params[key] = Array.isArray(value) ? JSON.stringify(value) : String(value);
   }
 
   return { pathname: '/events', params } as const;
@@ -556,31 +676,59 @@ export default function DashboardScreen({ locked = false }: DashboardScreenProps
   const levelProgressLabel = getUserLevelProgressLabel(user);
   const levelProgressPercent = getUserLevelProgressPercent(user);
   const [browserCoords, setBrowserCoords] = useState<{ latitude: number; longitude: number } | null>(null);
-  const { events, isLoading: isCalendarLoading, error: calendarError } = useCalendarEvents({
-    ...(browserCoords ?? {}),
-    includeVisibleBodies: false,
-  });
-  const currentMonthEvents = getCalendarEventsForMonth(events, today.getFullYear(), today.getMonth());
+  const { events: sharedEvents, isLoading: isEventsLoading, error: eventsError } = useSharedEvents();
+  const calendarEvents = useMemo(
+    () => sharedEvents
+      .map((event, index) => eventListItemToCalendarEvent(event, index))
+      .filter((event): event is CalendarEvent => event !== null),
+    [sharedEvents]
+  );
+  const currentMonthEvents = getCalendarEventsForMonth(calendarEvents, today.getFullYear(), today.getMonth());
   const calendarTitle = today.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
-  const nextCalendarEvent = getNextCalendarEvent(events, today);
+  const nextCalendarEvent = getNextCalendarEvent(calendarEvents, today);
   const nextCalendarDate = nextCalendarEvent
     ? new Date(nextCalendarEvent.startDate).toLocaleDateString('en-US', {
         month: 'short',
         day: 'numeric',
       })
     : null;
-  const calendarBadge = isCalendarLoading
+  const calendarBadge = isEventsLoading
     ? 'LOADING'
-    : calendarError
+    : eventsError
     ? 'UNAVAILABLE'
     : formatCount(currentMonthEvents.length, 'EVENT', 'EVENTS');
-  const calendarMeta = isCalendarLoading
+  const calendarMeta = isEventsLoading
     ? 'Loading upcoming events...'
-    : calendarError
+    : eventsError
     ? 'Could not load event data'
     : nextCalendarEvent
     ? `Next: ${nextCalendarEvent.title} - ${nextCalendarDate}`
     : 'No calendar events scheduled';
+  const nextLaunch = useMemo(
+    () => toUpcomingLaunch(getNextSharedEvent(sharedEvents, (event) => event.category === 'launch')),
+    [sharedEvents]
+  );
+  const nextMeteorShower = useMemo(
+    () => toUpcomingMeteorShower(getNextSharedEvent(sharedEvents, isMeteorShowerEvent)),
+    [sharedEvents]
+  );
+  const nextUpcomingSpacewalkEvent = useMemo(
+    () => getNextSharedEvent(sharedEvents, isSpacewalkEvent),
+    [sharedEvents]
+  );
+  const nextSpacewalk = useMemo(
+    () => toUpcomingSpacewalk(
+      nextUpcomingSpacewalkEvent ?? getLatestSharedEvent(sharedEvents, isSpacewalkEvent),
+      nextUpcomingSpacewalkEvent ? 'upcoming' : 'latest'
+    ),
+    [nextUpcomingSpacewalkEvent, sharedEvents]
+  );
+  const isLaunchLoading = isEventsLoading;
+  const launchError = eventsError ? 'Could not load upcoming launches' : null;
+  const isMeteorLoading = isEventsLoading;
+  const meteorError = eventsError ? 'Could not load meteor shower data' : null;
+  const isSpacewalkLoading = isEventsLoading;
+  const spacewalkError = eventsError ? 'Could not load spacewalk schedule' : null;
   const [locationLabel, setLocationLabel] = useState('Requesting location...');
   const [locationMessage, setLocationMessage] = useState('Waiting for browser location access.');
   const [moonImageUrl, setMoonImageUrl] = useState<string | null>(null);
@@ -592,24 +740,15 @@ export default function DashboardScreen({ locked = false }: DashboardScreenProps
   const [viewingScore, setViewingScore] = useState<number | null>(null);
   const [viewingScoreInputs, setViewingScoreInputs] = useState<ViewingScoreResponse['inputs'] | null>(null);
   const [viewingScoreStatus, setViewingScoreStatus] = useState<ViewingScoreStatus>('loading');
-  const [nextLaunch, setNextLaunch] = useState<UpcomingLaunch | null>(null);
-  const [isLaunchLoading, setIsLaunchLoading] = useState(true);
-  const [launchError, setLaunchError] = useState<string | null>(null);
   const [nextIssPass, setNextIssPass] = useState<IssPass | null>(null);
   const [isIssLoading, setIsIssLoading] = useState(true);
   const [issError, setIssError] = useState<string | null>(null);
   const [visibleBodies, setVisibleBodies] = useState<VisibleBody[]>([]);
   const [isBodiesLoading, setIsBodiesLoading] = useState(true);
   const [bodiesError, setBodiesError] = useState<string | null>(null);
-  const [nextMeteorShower, setNextMeteorShower] = useState<UpcomingMeteorShower | null>(null);
-  const [isMeteorLoading, setIsMeteorLoading] = useState(true);
-  const [meteorError, setMeteorError] = useState<string | null>(null);
   const [currentWeather, setCurrentWeather] = useState<WeatherResponse | null>(null);
   const [isWeatherLoading, setIsWeatherLoading] = useState(true);
   const [weatherError, setWeatherError] = useState<string | null>(null);
-  const [nextSpacewalk, setNextSpacewalk] = useState<UpcomingSpacewalk | null>(null);
-  const [isSpacewalkLoading, setIsSpacewalkLoading] = useState(true);
-  const [spacewalkError, setSpacewalkError] = useState<string | null>(null);
   const [nasaArticle, setNasaArticle] = useState<NewsArticle | null>(null);
   const [isNewsLoading, setIsNewsLoading] = useState(true);
   const [newsError, setNewsError] = useState<string | null>(null);
@@ -637,49 +776,6 @@ export default function DashboardScreen({ locked = false }: DashboardScreenProps
   useEffect(() => {
     let isMounted = true;
 
-    (async () => {
-      try {
-        setIsLaunchLoading(true);
-        setLaunchError(null);
-        const launch = await fetchNextUpcomingLaunch();
-        if (!isMounted) return;
-        setNextLaunch(launch);
-      } catch (error) {
-        console.log('Launch fetch error:', error);
-        if (!isMounted) return;
-        setNextLaunch(null);
-        setLaunchError('Could not load upcoming launches');
-      } finally {
-        if (isMounted) setIsLaunchLoading(false);
-      }
-    })();
-
-    return () => {
-      isMounted = false;
-    };
-  }, []);
-
-  useEffect(() => {
-    let isMounted = true;
-
-    async function loadSpacewalk() {
-      try {
-        setIsSpacewalkLoading(true);
-        setSpacewalkError(null);
-        const spacewalk = await fetchNextUpcomingSpacewalk();
-        if (!isMounted) return;
-        setNextSpacewalk(spacewalk);
-      } catch (error) {
-        console.log('Spacewalk fetch error:', error);
-        if (isMounted) {
-          setNextSpacewalk(null);
-          setSpacewalkError('Could not load spacewalk schedule');
-        }
-      } finally {
-        if (isMounted) setIsSpacewalkLoading(false);
-      }
-    }
-
     async function loadNasaNews() {
       try {
         setIsNewsLoading(true);
@@ -698,7 +794,6 @@ export default function DashboardScreen({ locked = false }: DashboardScreenProps
       }
     }
 
-    void loadSpacewalk();
     void loadNasaNews();
 
     return () => {
@@ -790,24 +885,6 @@ export default function DashboardScreen({ locked = false }: DashboardScreenProps
       }
     }
 
-    async function loadMeteorShower(coords?: { latitude: number; longitude: number }) {
-      try {
-        setIsMeteorLoading(true);
-        setMeteorError(null);
-        const shower = await fetchNextUpcomingMeteorShower({ latitude: coords?.latitude });
-        if (!isMounted) return;
-        setNextMeteorShower(shower);
-      } catch (error) {
-        console.log('Meteor shower fetch error:', error);
-        if (isMounted) {
-          setNextMeteorShower(null);
-          setMeteorError('Could not load meteor shower data');
-        }
-      } finally {
-        if (isMounted) setIsMeteorLoading(false);
-      }
-    }
-
     async function loadWeather(coords: { latitude: number; longitude: number }) {
       try {
         setIsWeatherLoading(true);
@@ -843,7 +920,6 @@ export default function DashboardScreen({ locked = false }: DashboardScreenProps
           setVisibleBodies([]);
           setIsBodiesLoading(false);
           setBodiesError(null);
-          void loadMeteorShower();
           setCurrentWeather(null);
           setIsWeatherLoading(false);
           setWeatherError(null);
@@ -862,7 +938,6 @@ export default function DashboardScreen({ locked = false }: DashboardScreenProps
         void loadViewingScore(coords);
         void loadIssPass(coords);
         void loadVisibleBodies(coords);
-        void loadMeteorShower(coords);
         void loadWeather(coords);
 
         try {
@@ -901,7 +976,6 @@ export default function DashboardScreen({ locked = false }: DashboardScreenProps
         setVisibleBodies([]);
         setIsBodiesLoading(false);
         setBodiesError(null);
-        void loadMeteorShower();
         setCurrentWeather(null);
         setIsWeatherLoading(false);
         setWeatherError(null);
@@ -1030,11 +1104,11 @@ export default function DashboardScreen({ locked = false }: DashboardScreenProps
               </View>
 
               <Text style={styles.heroMetaText}>
-                {isIssLoading
+                {keepPipeGroupsTogether(isIssLoading
                   ? 'Checking visible passes for your location.'
                   : issError
                   ? issError
-                  : formatIssMeta(nextIssPass)}
+                  : formatIssMeta(nextIssPass))}
               </Text>
             </View>
 
@@ -1099,6 +1173,7 @@ export default function DashboardScreen({ locked = false }: DashboardScreenProps
               }
               thumb={<LaunchThumb imageUrl={nextLaunch?.image ?? null} />}
               onPress={() => router.push(eventDetailRoute({
+                eventId: nextLaunch?.event_id ?? null,
                 category: 'launch',
                 type: 'Rocket Launch',
                 name: nextLaunch?.name ?? 'Upcoming Launches',
@@ -1107,6 +1182,10 @@ export default function DashboardScreen({ locked = false }: DashboardScreenProps
                 description: nextLaunch?.mission?.description ?? formatLaunchMeta(nextLaunch),
                 imageUrl: nextLaunch?.image ?? null,
                 location: nextLaunch?.pad?.location ?? nextLaunch?.pad?.name ?? null,
+                videoUrl: nextLaunch?.video_url ?? null,
+                videoUrls: nextLaunch?.video_urls ?? null,
+                externalUrl: nextLaunch?.external_url ?? null,
+                externalUrls: nextLaunch?.external_urls ?? null,
                 synthetic: true,
               }) as any)}
               locked={isLocked}
@@ -1425,7 +1504,7 @@ function PreviewCard({
           </View>
         </View>
         <Text style={[styles.previewTitle, locked && styles.lockedPreviewText]} numberOfLines={2}>{title}</Text>
-        <Text style={[styles.previewMeta, locked && styles.lockedPreviewText]} numberOfLines={3}>{meta}</Text>
+        <Text style={[styles.previewMeta, locked && styles.lockedPreviewText]} numberOfLines={3}>{keepPipeGroupsTogether(meta)}</Text>
       </View>
     </Pressable>
   );
@@ -1833,11 +1912,14 @@ function SpacewalkThumb({
   isLoading: boolean;
 }) {
   const crewCount = spacewalk?.crew?.length ?? 0;
+  const imageSource = spacewalk?.image_url
+    ? { uri: spacewalk.image_url }
+    : require('@/assets/images/spacewalk-astronaut.png');
 
   return (
     <View style={styles.spacewalkThumb}>
       <Image
-        source={require('@/assets/images/spacewalk-astronaut.png')}
+        source={imageSource}
         style={styles.spacewalkImage}
         resizeMode="cover"
       />
@@ -1845,7 +1927,7 @@ function SpacewalkThumb({
       <View style={styles.spacewalkBottomRow}>
         <View style={styles.spacewalkCrewPill}>
           <Text style={styles.bodyNameText}>
-            {crewCount > 0 ? formatCount(crewCount, 'crew member') : 'Crew TBD'}
+            {crewCount > 0 ? formatCount(crewCount, 'crew member') : spacewalk ? 'EVA' : 'Crew TBD'}
           </Text>
         </View>
         <View style={styles.spacewalkReadout}>
