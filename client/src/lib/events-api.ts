@@ -206,12 +206,25 @@ export async function deleteUserEvent(userEventId: number | string): Promise<Del
   );
 }
 
+type EventsListQuery = {
+  includePast?: boolean;
+  pastDays?: number;
+  futureDays?: number;
+  signal?: AbortSignal;
+};
+
 /**
- * Fetch all upcoming events (space events + launches) as one chronologically
- * sorted array. Reads cached server data; no external APIs are hit.
+ * Fetch space events + launches as one chronologically sorted array. By default
+ * it returns the upcoming list; includePast adds recent history before it.
  */
-export async function fetchEventsList(signal?: AbortSignal): Promise<EventListItem[]> {
-  const res = await fetch(`${API_BASE}/api/events/list`, { signal });
+export async function fetchEventsList(input?: AbortSignal | EventsListQuery): Promise<EventListItem[]> {
+  const query = input instanceof AbortSignal ? { signal: input } : input ?? {};
+  const params = new URLSearchParams();
+  if (query.includePast) params.set('include_past', 'true');
+  if (query.pastDays != null) params.set('past_days', String(query.pastDays));
+  if (query.futureDays != null) params.set('future_days', String(query.futureDays));
+  const url = `${API_BASE}/api/events/list${params.size > 0 ? `?${params}` : ''}`;
+  const res = await fetch(url, { signal: query.signal });
   if (!res.ok) throw new Error(`events list request failed: ${res.status}`);
   return res.json();
 }

@@ -5,7 +5,7 @@
 // visually distinct (see EventCard). Clicking a card is a placeholder for now —
 // phase 2 will route to a per-event detail page.
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -25,6 +25,16 @@ import { getUser } from '@/utilities/users-service';
 import { dvw } from '@/utilities/responsive-dimensions';
 
 const ALL = 'All';
+const PAST_DAYS_TO_SHOW = 365;
+const FUTURE_DAYS_TO_SHOW = 365;
+const FILTER_OPTIONS = [
+  ALL,
+  'Rocket Launch',
+  'Meteor Shower',
+  'Celestial Events',
+  'Spacecraft Event',
+  'Spacewalk',
+];
 
 type EventRouteParams = {
   eventId?: string | string[];
@@ -47,6 +57,26 @@ function normalizeParam(value?: string | null) {
   return (value ?? '').trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
+function eventMatchesFilter(event: EventListItem, filter: string) {
+  if (filter === ALL) return true;
+
+  const type = normalizeParam(event.type);
+  if (filter === 'Rocket Launch') return event.category === 'launch' || type.includes('launch');
+  if (filter === 'Meteor Shower') return type.includes('meteor');
+  if (filter === 'Spacecraft Event') return type.includes('spacecraft');
+  if (filter === 'Spacewalk') return type.includes('spacewalk');
+  if (filter === 'Celestial Events') {
+    return (
+      event.category !== 'launch' &&
+      !type.includes('meteor') &&
+      !type.includes('spacecraft') &&
+      !type.includes('spacewalk')
+    );
+  }
+
+  return event.type === filter;
+}
+
 function getEventRouteKey(params: EventRouteParams) {
   return [
     firstParam(params.eventId),
@@ -66,6 +96,12 @@ function sameEventDate(left?: string | null, right?: string | null) {
   const rightTime = new Date(right).getTime();
   if (Number.isNaN(leftTime) || Number.isNaN(rightTime)) return true;
   return Math.abs(leftTime - rightTime) < 60 * 1000;
+}
+
+function getEventTime(event: EventListItem) {
+  if (!event.date) return Infinity;
+  const time = new Date(event.date).getTime();
+  return Number.isNaN(time) ? Infinity : time;
 }
 
 function findRequestedEvent(events: EventListItem[], params: EventRouteParams) {
@@ -134,6 +170,9 @@ export default function EventsScreen() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeType, setActiveType] = useState<string>(ALL);
+  const listRef = useRef<ScrollView>(null);
+  const [upcomingAnchorY, setUpcomingAnchorY] = useState<number | null>(null);
+  const [didAlignToUpcoming, setDidAlignToUpcoming] = useState(false);
 
   // Modal + user context (location for the viewing score, user_id for saving).
   const [selectedEvent, setSelectedEvent] = useState<EventListItem | null>(null);
@@ -163,7 +202,12 @@ export default function EventsScreen() {
       try {
         setLoading(true);
         setError(null);
-        const data = await fetchEventsList(controller.signal);
+        const data = await fetchEventsList({
+          includePast: true,
+          pastDays: PAST_DAYS_TO_SHOW,
+          futureDays: FUTURE_DAYS_TO_SHOW,
+          signal: controller.signal,
+        });
         setEvents(data);
       } catch (err) {
         if ((err as Error).name !== 'AbortError') {
@@ -178,19 +222,36 @@ export default function EventsScreen() {
 
   // Filter options are derived from the types actually present in the data,
   // with "All" always first. Order preserves first-seen (already chronological).
-  const filterOptions = useMemo(() => {
-    const seen = new Set<string>();
-    for (const e of events) {
-      if (e.type) seen.add(e.type);
-    }
-    return [ALL, ...seen];
-  }, [events]);
-
   // Client-side filtering only — no re-fetch. Data is already sorted soonest-first.
   const visibleEvents = useMemo(() => {
     if (activeType === ALL) return events;
-    return events.filter((e) => e.type === activeType);
+    return events.filter((event) => eventMatchesFilter(event, activeType));
   }, [events, activeType]);
+
+  const { pastEvents, upcomingEvents } = useMemo(() => {
+    const now = Date.now();
+    return {
+      pastEvents: visibleEvents.filter((event) => getEventTime(event) < now),
+      upcomingEvents: visibleEvents.filter((event) => getEventTime(event) >= now),
+    };
+  }, [visibleEvents]);
+
+  useEffect(() => {
+    setDidAlignToUpcoming(false);
+    setUpcomingAnchorY(null);
+  }, [activeType]);
+
+  function alignToUpcoming() {
+    if (didAlignToUpcoming || upcomingAnchorY == null || loading) return;
+    requestAnimationFrame(() => {
+      listRef.current?.scrollTo({ y: Math.max(upcomingAnchorY - 4, 0), animated: false });
+      setDidAlignToUpcoming(true);
+    });
+  }
+
+  useEffect(() => {
+    alignToUpcoming();
+  }, [upcomingAnchorY, loading, didAlignToUpcoming]);
 
   useEffect(() => {
     if (!routeEventKey || openedRouteEventKey === routeEventKey || loading) return;
@@ -228,7 +289,7 @@ export default function EventsScreen() {
           showsHorizontalScrollIndicator={false}
           style={styles.filterBar}
           contentContainerStyle={styles.filterBarContent}>
-          {filterOptions.map((option) => {
+          {FILTER_OPTIONS.map((option) => {
             const active = option === activeType;
             return (
               <Pressable
@@ -266,16 +327,38 @@ export default function EventsScreen() {
         </View>
       ) : (
         <ScrollView
+          ref={listRef}
           style={styles.list}
           contentContainerStyle={styles.listContent}
-          showsVerticalScrollIndicator={false}>
-          {visibleEvents.map((event) => (
+          showsVerticalScrollIndicator={false}
+          onContentSizeChange={alignToUpcoming}>
+          {pastEvents.length > 0 ? (
+            <View style={styles.timelineSection}>
+              <TimelineSectionLabel text="PAST EVENTS" />
+              {pastEvents.map((event) => (
+                <EventCard
+                  key={`${event.category}-${event.id}`}
+                  event={event}
+                  onPress={handleEventClick}
+                />
+              ))}
+            </View>
+          ) : null}
+
+          <View
+            style={styles.timelineSection}
+            onLayout={(event) => setUpcomingAnchorY(event.nativeEvent.layout.y)}>
+            {pastEvents.length > 0 && upcomingEvents.length > 0 ? (
+              <TimelineSectionLabel text="UPCOMING EVENTS" />
+            ) : null}
+            {upcomingEvents.map((event) => (
             <EventCard
               key={`${event.category}-${event.id}`}
               event={event}
               onPress={handleEventClick}
             />
-          ))}
+            ))}
+          </View>
         </ScrollView>
       )}
 
@@ -289,6 +372,15 @@ export default function EventsScreen() {
           userLon={userLon}
         />
       )}
+    </View>
+  );
+}
+
+function TimelineSectionLabel({ text }: { text: string }) {
+  return (
+    <View style={styles.timelineSectionLabelRow}>
+      <Text style={styles.timelineSectionLabel}>{text}</Text>
+      <View style={styles.timelineSectionLine} />
     </View>
   );
 }
@@ -355,6 +447,28 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: dvw(800),
     alignSelf: 'center',
+  },
+  timelineSection: {
+    gap: 12,
+  },
+  timelineSectionLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingTop: 6,
+    paddingBottom: 2,
+  },
+  timelineSectionLabel: {
+    color: Palette.accent,
+    fontSize: 12,
+    lineHeight: 14,
+    fontWeight: '800',
+    letterSpacing: 1,
+  },
+  timelineSectionLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: Palette.border,
   },
   centerState: {
     flex: 1,

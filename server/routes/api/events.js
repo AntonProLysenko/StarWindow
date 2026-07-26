@@ -25,7 +25,12 @@ router.get("/", async (req, res) => {
 // only (no external API calls on this route).
 router.get("/list", async (req, res) => {
   try {
-    const results = await eventService.getUpcomingList();
+    const includePast = String(req.query.include_past ?? "").toLowerCase() === "true";
+    const pastDays = req.query.past_days == null ? undefined : Number(req.query.past_days);
+    const futureDays = req.query.future_days == null ? undefined : Number(req.query.future_days);
+    const results = includePast
+      ? await eventService.getTimelineList({ includePast, pastDays, futureDays })
+      : await eventService.getUpcomingList();
     res.json(results);
   } catch (error) {
     const status = error.status || 500;

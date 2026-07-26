@@ -259,7 +259,81 @@ async function getUpcomingList() {
   });
 }
 
-module.exports = { getEvents, getSpacewalks, getUpcomingList };
+async function getTimelineList({ includePast = false, pastDays = 365, futureDays = 365 } = {}) {
+  if (!includePast) return getUpcomingList();
+
+  const now = new Date();
+  const windowStart = new Date(now.getTime() - pastDays * 24 * 60 * 60 * 1000);
+  const windowEnd = new Date(now.getTime() + futureDays * 24 * 60 * 60 * 1000);
+  const [events, launches] = await Promise.all([
+    eventQueries.getNonLaunchEventsInWindow({
+      fromDate: windowStart.toISOString(),
+      toDate: windowEnd.toISOString(),
+      limit: 400,
+    }),
+    launchQueries.getCachedLaunches({
+      fromDate: windowStart.toISOString(),
+      toDate: windowEnd.toISOString(),
+      limit: 400,
+    }),
+  ]);
+  const meteorShowers = meteorService.getMeteorShowers({
+    fromDate: windowStart.toISOString(),
+    toDate: windowEnd.toISOString(),
+  }).results;
+
+  const normalizedEvents = events.map((e) => ({
+    id: e.event_id,
+    event_id: e.event_id,
+    category: "event",
+    name: e.name,
+    type: e.event_type || "Event",
+    date: e.start_time,
+    date_precision: e.date_precision,
+    description: e.description,
+    image_url: e.image_url,
+    location: e.location_name || null,
+    latitude: null,
+    longitude: null,
+    webcast_live: e.webcast_live ?? false,
+    video_url: e.video_url || null,
+    launch_details: null,
+  }));
+
+  const normalizedLaunches = launches.map((l) => ({
+    id: l.launch_id,
+    event_id: l.event_id,
+    category: "launch",
+    name: l.name,
+    type: "Rocket Launch",
+    date: l.net,
+    date_precision: l.date_precision || l.net_precision,
+    description: l.mission_description,
+    image_url: l.image_url,
+    location: l.pad_location || l.pad_name || null,
+    latitude: l.pad_lat != null ? Number(l.pad_lat) : null,
+    longitude: (l.pad_lon ?? l.pad_long) != null ? Number(l.pad_lon ?? l.pad_long) : null,
+    webcast_live: l.webcast_live ?? false,
+    video_url: l.video_url || null,
+    launch_details: {
+      rocket_model: l.rocket_model || null,
+      provider: l.provider_name || null,
+      mission_name: l.mission_name || null,
+      mission_type: l.mission_type || null,
+      pad_name: l.pad_name || null,
+      pad_location: l.pad_location || null,
+      status: l.launch_status || l.status || null,
+    },
+  }));
+
+  return [...normalizedEvents, ...normalizedLaunches, ...meteorShowers].sort((a, b) => {
+    const ta = a.date ? new Date(a.date).getTime() : Infinity;
+    const tb = b.date ? new Date(b.date).getTime() : Infinity;
+    return ta - tb;
+  });
+}
+
+module.exports = { getEvents, getSpacewalks, getUpcomingList, getTimelineList };
 
 function toStartOfDay(value) {
   return isDateOnly(value) ? `${value}T00:00:00Z` : value;

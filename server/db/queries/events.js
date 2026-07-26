@@ -17,6 +17,7 @@ module.exports = {
   getCachedEvents,
   getLatestCachedAt,
   getUpcomingNonLaunchEvents,
+  getNonLaunchEventsInWindow,
   saveEvent,
   findEventByNaturalKey,
   upsertEventType,
@@ -140,6 +141,52 @@ async function getUpcomingNonLaunchEvents(limit = 200) {
       LIMIT $1
     `,
     [limit]
+  );
+  return result.rows;
+}
+
+async function getNonLaunchEventsInWindow({ limit = 200, fromDate, toDate } = {}) {
+  const values = [];
+  const where = [
+    `NOT EXISTS (
+      SELECT 1 FROM public.rocket_launch rl WHERE rl.event_id = e.event_id
+    )`,
+  ];
+
+  if (fromDate) {
+    values.push(fromDate);
+    where.push(`e.start_time >= $${values.length}::timestamptz`);
+  }
+
+  if (toDate) {
+    values.push(toDate);
+    where.push(`e.start_time <= $${values.length}::timestamptz`);
+  }
+
+  values.push(limit);
+  const result = await database.query(
+    `
+      SELECT * FROM (
+        SELECT DISTINCT ON (e.name, e.start_time)
+          e.event_id, e.name, e.start_time, e.date_precision, e.description,
+          e.image_url, e.webcast_live, e.video_url, et.event_type,
+          (
+            SELECT loc.name
+            FROM public.event_location el
+            JOIN public.locations loc ON loc.location_id = el.location_id
+            WHERE el.event_id = e.event_id
+            ORDER BY el.event_location_id ASC
+            LIMIT 1
+          ) AS location_name
+        FROM public.events e
+        LEFT JOIN public.event_types et ON et.event_type_id = e.type_id
+        WHERE ${where.join(" AND ")}
+        ORDER BY e.name, e.start_time, e.event_id
+      ) uniq
+      ORDER BY uniq.start_time ASC
+      LIMIT $${values.length}
+    `,
+    values
   );
   return result.rows;
 }
