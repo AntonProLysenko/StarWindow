@@ -1,23 +1,18 @@
 // EventCard — one row in the events list. Kept as its own module so phase 2
 // (the event detail page) can reuse the card and the date/description helpers.
 //
-// Rocket launches are styled distinctly from generic space events: a red left
-// accent border, a "🚀 LAUNCH" badge, and a rocket placeholder when they have
-// no image — so they stand out in the mixed chronological list.
+// Rocket launches keep a distinct badge and rocket placeholder when they have
+// no image, so they stand out in the mixed chronological list.
 
 import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { fallbackIconSource } from '@/components/events/event-fallback-icon';
 import { Palette, Radius } from '@/constants/tokens';
+import { getEventColorTheme, getEventEmoji } from '@/lib/event-colors';
 import type { EventListItem } from '@/lib/events-api';
 import { dvw, dvh } from '@/utilities/responsive-dimensions';
 
 const DESCRIPTION_MAX = 140;
-
-/** Accent used for launch cards (matches the dashboard's "Launches" theming). */
-const LAUNCH_ACCENT = Palette.accentRed;
-/** Accent used for regular space events. */
-const EVENT_ACCENT = Palette.accent;
 
 /**
  * Format an event date honoring its precision, so approximate dates aren't shown
@@ -68,7 +63,8 @@ export function EventCard({
   onPress: (event: EventListItem) => void;
 }) {
   const isLaunch = event.category === 'launch';
-  const accent = isLaunch ? LAUNCH_ACCENT : EVENT_ACCENT;
+  const colorTheme = getEventColorTheme(event);
+  const eventEmoji = getEventEmoji(event);
   const description = truncate(event.description);
   const savedNote = getSavedEventNote(event);
   const fallbackIcon = fallbackIconSource(event);
@@ -79,7 +75,6 @@ export function EventCard({
       onPress={() => onPress(event)}
       style={({ pressed }) => [
         styles.card,
-        isLaunch && { borderLeftColor: LAUNCH_ACCENT, borderLeftWidth: 3 },
         pressed && styles.cardPressed,
       ]}>
       <View style={styles.thumb}>
@@ -100,9 +95,9 @@ export function EventCard({
 
       <View style={styles.body}>
         <View style={styles.badgeRow}>
-          <View style={[styles.badge, { backgroundColor: accent + '20' }]}>
-            <Text style={[styles.badgeText, { color: accent }]}>
-              {isLaunch ? '🚀 LAUNCH' : event.type.toUpperCase()}
+          <View style={[styles.badge, { backgroundColor: colorTheme.background, borderColor: colorTheme.border }]}>
+            <Text style={[styles.badgeText, { color: colorTheme.accent }]}>
+              {eventEmoji} {isLaunch ? 'LAUNCH' : event.type.toUpperCase()}
             </Text>
           </View>
         </View>

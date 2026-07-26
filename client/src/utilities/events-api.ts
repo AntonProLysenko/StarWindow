@@ -21,6 +21,8 @@ type RawEvent = {
   webcast_live?: boolean;
   video_urls?: string[];
   video_url?: string | null;
+  external_url?: string | null;
+  external_urls?: string[];
   image_url?: string | null;
   radiant?: string | null;
   radiant_declination_degrees?: number | string | null;
@@ -57,6 +59,9 @@ type RawLaunch = {
   rocket?: string;
   webcast_live?: boolean;
   video_url?: string | null;
+  video_urls?: string[];
+  external_url?: string | null;
+  external_urls?: string[];
   image?: string | null;
 };
 
@@ -130,6 +135,9 @@ export type CalendarEvent = {
   datePrecision?: string | null;
   webcastLive?: boolean;
   videoUrl?: string | null;
+  videoUrls?: string[];
+  externalUrl?: string | null;
+  externalUrls?: string[];
   latitude?: number | null;
   longitude?: number | null;
   launchDetails?: {
@@ -239,6 +247,9 @@ function toCalendarEvent(event: RawEvent, index: number): CalendarEvent | null {
     datePrecision: event.date_precision ?? null,
     webcastLive: event.webcast_live ?? false,
     videoUrl: event.video_url ?? event.video_urls?.[0] ?? null,
+    videoUrls: normalizeUrlList(event.video_urls, event.video_url),
+    externalUrl: event.external_url ?? null,
+    externalUrls: normalizeUrlList(event.external_urls, event.external_url),
     location: event.location,
     imageUrl: event.image_url,
     radiant: event.radiant ?? null,
@@ -281,6 +292,9 @@ function toLaunchCalendarEvent(launch: RawLaunch, index: number): CalendarEvent 
     datePrecision: launch.net_precision ?? null,
     webcastLive: launch.webcast_live ?? false,
     videoUrl: launch.video_url ?? null,
+    videoUrls: normalizeUrlList(launch.video_urls, launch.video_url),
+    externalUrl: launch.external_url ?? null,
+    externalUrls: normalizeUrlList(launch.external_urls, launch.external_url),
     latitude: launch.pad?.latitude == null ? null : Number(launch.pad.latitude),
     longitude: launch.pad?.longitude == null ? null : Number(launch.pad.longitude),
     launchDetails: {
@@ -400,6 +414,20 @@ function formatNumber(value: string | number | null | undefined, digits: number)
   if (value === null || value === undefined) return null;
   const number = Number(value);
   return Number.isFinite(number) ? number.toFixed(digits) : null;
+}
+
+function normalizeUrlList(urls?: string[] | null, fallback?: string | null) {
+  const output: string[] = [];
+  const seen = new Set<string>();
+
+  for (const url of [...(urls ?? []), fallback].filter(Boolean)) {
+    const value = String(url).trim();
+    if (!value || seen.has(value)) continue;
+    seen.add(value);
+    output.push(value);
+  }
+
+  return output;
 }
 
 function toFiniteNumber(value: string | number | null | undefined) {

@@ -58,7 +58,9 @@ export interface EventListItem {
   longitude: number | null;
   webcast_live: boolean;
   video_url: string | null;
+  video_urls?: string[];
   external_url?: string | null;
+  external_urls?: string[];
   launch_details: LaunchDetails | null;
   visible_bodies?: VisibleBodyEventItem[];
   radiant?: string | null;
@@ -157,6 +159,13 @@ export interface ViewingScoreResponse {
   weather: unknown;
 }
 
+export interface EventLinkResponse {
+  video_url: string | null;
+  video_urls?: string[];
+  external_url?: string | null;
+  external_urls?: string[];
+}
+
 /** Fetch a 0–100 viewing score for a coordinate (GET /api/score). */
 export async function fetchViewingScore(
   lat: number,
@@ -188,6 +197,17 @@ export async function checkEventSaved(
     event_rating: number | null;
     user_event_images: SavedUserEventImage[];
   }>(`${API_BASE}/api/user-events?${params}`, 'GET', null, { signal });
+}
+
+export async function fetchLaunchLinks(
+  input: { name: string; date?: string | null },
+  signal?: AbortSignal
+): Promise<EventLinkResponse> {
+  const params = new URLSearchParams({ name: input.name });
+  if (input.date) params.set('date', input.date);
+  const res = await fetch(`${API_BASE}/api/launches/links?${params}`, { signal });
+  if (!res.ok) throw new Error(`launch links request failed: ${res.status}`);
+  return res.json();
 }
 
 /** Save an event for a user (POST /api/user-events). Idempotent server-side. */

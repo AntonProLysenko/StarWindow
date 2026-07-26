@@ -4,7 +4,12 @@
 const launchQueries = require("../db/queries/launches");
 const { isCacheStale, TTL_MINUTES } = require("../middleware/cache");
 
-const LL2_BASE = "https://ll.thespacedevs.com/2.3.0";
+const LL2_BASES = [
+  "https://ll.thespacedevs.com/2.3.0",
+  "https://lldev.thespacedevs.com/2.3.0",
+];
+const LL2_THROTTLE_COOLDOWN_MS = 60 * 60 * 1000;
+let launchesRefreshBlockedUntil = 0;
 
 /**
  * Get upcoming rocket launches.
@@ -15,7 +20,8 @@ const LL2_BASE = "https://ll.thespacedevs.com/2.3.0";
  * @returns {Promise<object>} { count, results }
  */
 async function getLaunches({ limit = 5, fromDate, toDate } = {}) {
-  const cached = await launchQueries.getCachedLaunches({ limit, fromDate, toDate });
+  const effectiveFromDate = fromDate || new Date().toISOString();
+  const cached = await launchQueries.getCachedLaunches({ limit, fromDate: effectiveFromDate, toDate });
   const hasStaleCachedLaunch = cached.some((launch) =>
     isCacheStale(launch.cached_at, TTL_MINUTES.LAUNCHES)
   );
@@ -23,22 +29,52 @@ async function getLaunches({ limit = 5, fromDate, toDate } = {}) {
     console.log("\n=== UPCOMING ROCKET LAUNCHES (cache hit) ===");
     return { count: cached.length, results: cached.map(mapCachedLaunch) };
   }
-
-  const params = new URLSearchParams({
-    limit: String(limit),
-    mode: "detailed",
-  });
-  if (fromDate) params.set("net__gte", toStartOfDay(fromDate));
-  if (toDate) params.set("net__lte", toEndOfDay(toDate));
-
-  const response = await fetch(`${LL2_BASE}/launches/upcoming/?${params}`);
-  if (!response.ok) {
-    const err = new Error(`LL2 API returned ${response.status}`);
-    err.status = response.status;
-    throw err;
+  if (cached.length > 0 && Date.now() < launchesRefreshBlockedUntil) {
+    return { count: cached.length, results: cached.map(mapCachedLaunch) };
   }
 
-  const data = await response.json();
+  const params = new URLSearchParams({
+    format: "json",
+    limit: String(limit),
+    mode: "detailed",
+    hide_recent_previous: "true",
+    ordering: "net",
+  });
+  params.set("net__gte", toStartOfDay(effectiveFromDate));
+  if (toDate) params.set("net__lte", toEndOfDay(toDate));
+
+  let data;
+  let lastFetchError;
+  try {
+    for (const baseUrl of LL2_BASES) {
+      try {
+        const response = await fetch(`${baseUrl}/launches/upcoming/?${params}`);
+        const body = await response.json();
+        if (!response.ok) {
+          const err = new Error(body?.detail || `LL2 API returned ${response.status}`);
+          err.status = response.status;
+          throw err;
+        }
+        data = body;
+        break;
+      } catch (error) {
+        lastFetchError = error;
+        if (!(error.status === 429 || /throttled|too many requests/i.test(error.message))) {
+          throw error;
+        }
+      }
+    }
+    if (!data) throw lastFetchError || new Error("LL2 launch fetch failed");
+  } catch (error) {
+    if (error.status === 429 || /throttled|too many requests/i.test(error.message)) {
+      launchesRefreshBlockedUntil = Date.now() + LL2_THROTTLE_COOLDOWN_MS;
+    }
+    if (cached.length > 0) {
+      console.warn("LL2 launches refresh failed; returning cached launches:", error.message);
+      return { count: cached.length, results: cached.map(mapCachedLaunch) };
+    }
+    throw error;
+  }
 
   // Transform to the frontend shape (same fields as the original route).
   const launches = (data.results || []).map((l) => ({
@@ -63,8 +99,8 @@ async function getLaunches({ limit = 5, fromDate, toDate } = {}) {
     rocket: l.rocket?.configuration?.name,
     image: l.image?.image_url || null,
     webcast_live: Boolean(l.webcast_live),
-    video_url: firstUrl(l.vid_urls),
-    info_url: firstUrl(l.info_urls) || firstUpdateInfoUrl(l.updates) || l.url || null,
+    video_urls: collectUrls(l.vid_urls, l.mission?.vid_urls),
+    external_urls: collectUrls(l.info_urls, l.mission?.info_urls, updateInfoUrls(l.updates)),
   }));
 
   console.log("\n=== UPCOMING ROCKET LAUNCHES ===");
@@ -93,8 +129,8 @@ async function getLaunches({ limit = 5, fromDate, toDate } = {}) {
         description: l.mission?.description || null,
         eventType: "Launch", // upserted into event_types
         webcastLive: l.webcast_live,
-        videoUrl: l.video_url,
-        infoUrl: l.info_url,
+        videoUrl: l.video_urls[0] || null,
+        infoUrl: l.external_urls[0] || null,
         imageUrl: l.image,
       };
 
@@ -133,11 +169,74 @@ async function getLaunches({ limit = 5, fromDate, toDate } = {}) {
     }
   }
 
-  const refreshed = await launchQueries.getCachedLaunches({ limit, fromDate, toDate });
+  const refreshed = await launchQueries.getCachedLaunches({ limit, fromDate: effectiveFromDate, toDate });
   return { count: refreshed.length, results: refreshed.map(mapCachedLaunch) };
 }
 
-module.exports = { getLaunches };
+async function getLaunchLinks({ name, date } = {}) {
+  if (!name) {
+    const error = new Error("name is required");
+    error.status = 400;
+    throw error;
+  }
+
+  const params = new URLSearchParams({
+    format: "json",
+    limit: "25",
+    mode: "detailed",
+    search: name,
+  });
+
+  if (date) {
+    const center = new Date(date);
+    if (!Number.isNaN(center.getTime())) {
+      const from = new Date(center.getTime() - 14 * 24 * 60 * 60 * 1000);
+      const to = new Date(center.getTime() + 14 * 24 * 60 * 60 * 1000);
+      params.set("net__gte", from.toISOString());
+      params.set("net__lte", to.toISOString());
+    }
+  }
+
+  const data = await fetchLaunchesFromSpaceDevs(params);
+  const launches = data.results || [];
+  const match = findBestLaunchMatch(launches, { name, date });
+  const videoUrls = collectUrls(match?.vid_urls, match?.mission?.vid_urls);
+  const externalUrls = collectUrls(match?.info_urls, match?.mission?.info_urls, updateInfoUrls(match?.updates));
+
+  return {
+    name: match?.name || name,
+    video_url: videoUrls[0] || null,
+    video_urls: videoUrls,
+    external_url: externalUrls[0] || null,
+    external_urls: externalUrls,
+  };
+}
+
+module.exports = { getLaunches, getLaunchLinks };
+
+async function fetchLaunchesFromSpaceDevs(params) {
+  let lastFetchError;
+
+  for (const baseUrl of LL2_BASES) {
+    try {
+      const response = await fetch(`${baseUrl}/launches/upcoming/?${params}`);
+      const body = await response.json();
+      if (!response.ok) {
+        const err = new Error(body?.detail || `LL2 API returned ${response.status}`);
+        err.status = response.status;
+        throw err;
+      }
+      return body;
+    } catch (error) {
+      lastFetchError = error;
+      if (!(error.status === 429 || /throttled|too many requests/i.test(error.message))) {
+        throw error;
+      }
+    }
+  }
+
+  throw lastFetchError || new Error("LL2 launch fetch failed");
+}
 
 function toStartOfDay(value) {
   return isDateOnly(value) ? `${value}T00:00:00Z` : value;
@@ -152,6 +251,9 @@ function isDateOnly(value) {
 }
 
 function mapCachedLaunch(row) {
+  const videoUrls = parseUrlList(row.video_url);
+  const externalUrls = parseUrlList(row.info_url);
+
   return {
     id: row.launch_id,
     launch_id: row.launch_id,
@@ -168,8 +270,10 @@ function mapCachedLaunch(row) {
     latitude: row.pad_lat == null ? null : Number(row.pad_lat),
     longitude: row.pad_long == null ? null : Number(row.pad_long),
     webcast_live: row.webcast_live ?? false,
-    video_url: row.video_url || null,
-    external_url: row.info_url || null,
+    video_url: videoUrls[0] || null,
+    video_urls: videoUrls,
+    external_url: externalUrls[0] || null,
+    external_urls: externalUrls,
     mission: row.mission_name
       ? {
           name: row.mission_name,
@@ -203,17 +307,79 @@ function mapCachedLaunch(row) {
 }
 
 function firstUrl(value) {
-  if (!Array.isArray(value)) return null;
-  for (const item of value) {
-    if (typeof item === "string" && item) return item;
-    if (item?.url) return item.url;
-    if (item?.info_url) return item.info_url;
-  }
-  return null;
+  return collectUrls(value)[0] || null;
+}
+
+function updateInfoUrls(updates) {
+  if (!Array.isArray(updates)) return null;
+  return updates.map((item) => item?.info_url).filter(Boolean);
 }
 
 function firstUpdateInfoUrl(updates) {
-  if (!Array.isArray(updates)) return null;
-  const update = updates.find((item) => item?.info_url);
-  return update?.info_url || null;
+  return updateInfoUrls(updates)?.[0] || null;
+}
+
+function collectUrls(...groups) {
+  const urls = [];
+  const seen = new Set();
+
+  for (const group of groups) {
+    const items = Array.isArray(group) ? group : group ? [group] : [];
+    for (const item of items) {
+      const url = typeof item === "string" ? item : item?.url || item?.info_url;
+      if (!url || seen.has(url)) continue;
+      seen.add(url);
+      urls.push(url);
+    }
+  }
+
+  return urls;
+}
+
+function serializeUrlList(urls) {
+  const cleanUrls = collectUrls(urls);
+  if (cleanUrls.length === 0) return null;
+  if (cleanUrls.length === 1) return cleanUrls[0];
+  return JSON.stringify(cleanUrls);
+}
+
+function parseUrlList(value) {
+  if (!value) return [];
+  if (Array.isArray(value)) return collectUrls(value);
+  const text = String(value).trim();
+  if (!text) return [];
+
+  if (text.startsWith("[")) {
+    try {
+      return collectUrls(JSON.parse(text));
+    } catch {
+      return [text];
+    }
+  }
+
+  return [text];
+}
+
+function findBestLaunchMatch(launches, { name, date }) {
+  if (!Array.isArray(launches) || launches.length === 0) return null;
+  const normalizedName = normalizeText(name);
+  const targetTime = date ? new Date(date).getTime() : NaN;
+
+  return launches.find((launch) =>
+    normalizeText(launch.name) === normalizedName &&
+    datesAreClose(launch.net, targetTime)
+  ) || launches.find((launch) =>
+    normalizeText(launch.name) === normalizedName
+  ) || launches[0];
+}
+
+function datesAreClose(value, targetTime) {
+  if (!Number.isFinite(targetTime)) return true;
+  const time = new Date(value).getTime();
+  if (!Number.isFinite(time)) return true;
+  return Math.abs(time - targetTime) < 60 * 1000;
+}
+
+function normalizeText(value) {
+  return String(value || "").trim().toLowerCase().replace(/\s+/g, " ");
 }

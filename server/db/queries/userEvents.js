@@ -474,6 +474,7 @@ async function getSavedEventsForUser(userId) {
         CASE WHEN rl.launch_id IS NULL THEN NULL ELSE pad_loc.long END AS longitude,
         e.webcast_live,
         e.video_url,
+        e.info_url,
         r.model AS rocket_model,
         p.name AS provider,
         m.name AS mission_name,
@@ -497,38 +498,78 @@ async function getSavedEventsForUser(userId) {
     [userId]
   );
 
-  return result.rows.map((row) => ({
-    user_event_id: row.user_event_id,
-    event_comment: row.event_comment,
-    event_rating: row.event_rating,
-    user_event_images: row.user_event_images || [],
-    id: row.id,
-    event_id: row.event_id,
-    category: row.category,
-    name: row.name,
-    type: row.type,
-    date: row.date,
-    date_precision: row.date_precision,
-    description: row.description,
-    image_url: row.image_url,
-    location: row.location,
-    latitude: row.latitude != null ? Number(row.latitude) : null,
-    longitude: row.longitude != null ? Number(row.longitude) : null,
-    webcast_live: row.webcast_live ?? false,
-    video_url: row.video_url || null,
-    launch_details:
-      row.category === "launch"
-        ? {
-            rocket_model: row.rocket_model || null,
-            provider: row.provider || null,
-            mission_name: row.mission_name || null,
-            mission_type: row.mission_type || null,
-            pad_name: row.pad_name || null,
-            pad_location: row.pad_location || null,
-            status: row.launch_status || null,
-          }
-        : null,
-  }));
+  return result.rows.map((row) => {
+    const videoUrls = parseUrlList(row.video_url);
+    const externalUrls = parseUrlList(row.info_url);
+
+    return {
+      user_event_id: row.user_event_id,
+      event_comment: row.event_comment,
+      event_rating: row.event_rating,
+      user_event_images: row.user_event_images || [],
+      id: row.id,
+      event_id: row.event_id,
+      category: row.category,
+      name: row.name,
+      type: row.type,
+      date: row.date,
+      date_precision: row.date_precision,
+      description: row.description,
+      image_url: row.image_url,
+      location: row.location,
+      latitude: row.latitude != null ? Number(row.latitude) : null,
+      longitude: row.longitude != null ? Number(row.longitude) : null,
+      webcast_live: row.webcast_live ?? false,
+      video_url: videoUrls[0] || null,
+      video_urls: videoUrls,
+      external_url: externalUrls[0] || null,
+      external_urls: externalUrls,
+      launch_details:
+        row.category === "launch"
+          ? {
+              rocket_model: row.rocket_model || null,
+              provider: row.provider || null,
+              mission_name: row.mission_name || null,
+              mission_type: row.mission_type || null,
+              pad_name: row.pad_name || null,
+              pad_location: row.pad_location || null,
+              status: row.launch_status || null,
+            }
+          : null,
+    };
+  });
+}
+
+function parseUrlList(value) {
+  if (!value) return [];
+  if (Array.isArray(value)) return collectUrls(value);
+  const text = String(value).trim();
+  if (!text) return [];
+
+  if (text.startsWith("[")) {
+    try {
+      return collectUrls(JSON.parse(text));
+    } catch {
+      return [text];
+    }
+  }
+
+  return [text];
+}
+
+function collectUrls(values) {
+  const urls = [];
+  const seen = new Set();
+  const items = Array.isArray(values) ? values : values ? [values] : [];
+
+  for (const item of items) {
+    const url = typeof item === "string" ? item : item?.url || item?.info_url;
+    if (!url || seen.has(url)) continue;
+    seen.add(url);
+    urls.push(url);
+  }
+
+  return urls;
 }
 
 function normalizeComment(value) {

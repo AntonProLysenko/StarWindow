@@ -19,6 +19,7 @@ import { useLocalSearchParams } from 'expo-router';
 import { EventCard } from '@/components/events/event-card';
 import { EventModal } from '@/components/events/event-modal';
 import { Palette, Radius } from '@/constants/tokens';
+import { getEventEmoji } from '@/lib/event-colors';
 import { fetchEventsList, type EventListItem } from '@/lib/events-api';
 import { getOrRequestUserLocation } from '@/utilities/user-location-service';
 import { getUser } from '@/utilities/users-service';
@@ -60,6 +61,10 @@ type EventRouteParams = {
   description?: string | string[];
   imageUrl?: string | string[];
   location?: string | string[];
+  videoUrl?: string | string[];
+  videoUrls?: string | string[];
+  externalUrl?: string | string[];
+  externalUrls?: string | string[];
   synthetic?: string | string[];
 };
 
@@ -67,8 +72,46 @@ function firstParam(value?: string | string[]) {
   return Array.isArray(value) ? value[0] : value;
 }
 
+function urlArrayParam(value?: string | string[], fallback?: string | null) {
+  const raw = firstParam(value);
+  const urls: string[] = [];
+  const seen = new Set<string>();
+
+  function add(url?: string | null) {
+    const next = String(url ?? '').trim();
+    if (!next || seen.has(next)) return;
+    seen.add(next);
+    urls.push(next);
+  }
+
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        parsed.forEach((url) => add(typeof url === 'string' ? url : null));
+      } else {
+        add(raw);
+      }
+    } catch {
+      add(raw);
+    }
+  }
+  add(fallback);
+
+  return urls;
+}
+
 function normalizeParam(value?: string | null) {
   return (value ?? '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function getFilterLabel(option: string) {
+  if (option === ALL) return '✦ All';
+  return `${getEventEmoji({
+    category: option === 'Rocket Launch' ? 'launch' : 'event',
+    type: option,
+    name: option,
+  })} ${option}`;
 }
 
 function eventMatchesFilter(event: EventListItem, filter: string) {
@@ -171,6 +214,10 @@ function buildDashboardPreviewEvent(params: EventRouteParams): EventListItem | n
   if (!name) return null;
 
   const category = firstParam(params.category) === 'launch' ? 'launch' : 'event';
+  const videoUrl = firstParam(params.videoUrl) ?? null;
+  const externalUrl = firstParam(params.externalUrl) ?? null;
+  const videoUrls = urlArrayParam(params.videoUrls, videoUrl);
+  const externalUrls = urlArrayParam(params.externalUrls, externalUrl);
 
   return {
     id: `dashboard-${normalizeParam(type)}-${normalizeParam(name)}`,
@@ -186,7 +233,10 @@ function buildDashboardPreviewEvent(params: EventRouteParams): EventListItem | n
     latitude: null,
     longitude: null,
     webcast_live: false,
-    video_url: null,
+    video_url: videoUrls[0] ?? null,
+    video_urls: videoUrls,
+    external_url: externalUrls[0] ?? null,
+    external_urls: externalUrls,
     launch_details: null,
   };
 }
@@ -339,7 +389,7 @@ export default function EventsScreen() {
                 onPress={() => setActiveType(option)}
                 style={[styles.filterPill, active && styles.filterPillActive]}>
                 <Text style={[styles.filterPillText, active && styles.filterPillTextActive]}>
-                  {option}
+                  {getFilterLabel(option)}
                 </Text>
               </Pressable>
             );

@@ -14,6 +14,9 @@ const LL2_THROTTLE_COOLDOWN_MS = 60 * 60 * 1000;
 let eventsRefreshBlockedUntil = 0;
 
 function mapCachedEvent(row) {
+  const videoUrls = parseUrlList(row.video_url);
+  const externalUrls = parseUrlList(row.info_url);
+
   return {
     id: row.event_id,
     event_id: row.event_id,
@@ -28,14 +31,18 @@ function mapCachedEvent(row) {
     latitude: null,
     longitude: null,
     webcast_live: row.webcast_live,
-    video_url: row.video_url || null,
-    video_urls: row.video_url ? [row.video_url] : [],
-    external_url: row.info_url || null,
+    video_url: videoUrls[0] || null,
+    video_urls: videoUrls,
+    external_url: externalUrls[0] || null,
+    external_urls: externalUrls,
     image_url: row.image_url,
   };
 }
 
 function mapCachedSpacewalkEvent(row) {
+  const videoUrls = parseUrlList(row.video_url);
+  const externalUrls = parseUrlList(row.info_url);
+
   return {
     name: row.name,
     start: row.start_time,
@@ -45,8 +52,10 @@ function mapCachedSpacewalkEvent(row) {
     space_station: row.location_name || null,
     description: row.description || null,
     image_url: row.image_url || null,
-    video_url: row.video_url || null,
-    info_url: row.info_url || null,
+    video_url: videoUrls[0] || null,
+    video_urls: videoUrls,
+    info_url: externalUrls[0] || null,
+    external_urls: externalUrls,
     crew: extractEvaCrew(row.description).map((name) => ({ name })),
   };
 }
@@ -137,8 +146,8 @@ async function normalizeExternalEvent(event) {
   const location = event.location
     ? await locationQueries.findOrCreateLocationByName(event.location)
     : null;
-  const primaryVideo = Array.isArray(event.vid_urls) ? event.vid_urls[0] : null;
-  const primaryInfoUrl = firstUrl(event.info_urls) || firstUpdateInfoUrl(event.updates);
+  const videoUrls = collectUrls(event.vid_urls);
+  const externalUrls = collectUrls(event.info_urls, updateInfoUrls(event.updates));
 
   return {
     name: event.name,
@@ -148,8 +157,8 @@ async function normalizeExternalEvent(event) {
     description: event.description || null,
     eventType: event.type?.name || DEFAULT_EVENT_TYPE,
     webcastLive: event.webcast_live ?? false,
-    videoUrl: primaryVideo?.url || null,
-    infoUrl: primaryInfoUrl || null,
+    videoUrl: videoUrls[0] || null,
+    infoUrl: externalUrls[0] || null,
     imageUrl: event.image?.image_url || event.image?.thumbnail_url || null,
     locationId: location?.location_id || null,
   };
@@ -227,8 +236,7 @@ async function getUpcomingList() {
     latitude: null, // LL2 /events/ gives a free-text location with no coords
     longitude: null,
     webcast_live: e.webcast_live ?? false,
-    video_url: e.video_url || null,
-    external_url: e.info_url || null,
+    ...normalizeCachedLinks(e),
     launch_details: null,
   }));
 
@@ -249,8 +257,7 @@ async function getUpcomingList() {
     latitude: l.pad_lat != null ? Number(l.pad_lat) : null,
     longitude: l.pad_lon != null ? Number(l.pad_lon) : null,
     webcast_live: l.webcast_live ?? false,
-    video_url: l.video_url || null,
-    external_url: l.info_url || null,
+    ...normalizeCachedLinks(l),
     launch_details: {
       rocket_model: l.rocket_model || null,
       provider: l.provider_name || null,
@@ -314,8 +321,7 @@ async function getTimelineList({ includePast = false, pastDays = 365, futureDays
     latitude: null,
     longitude: null,
     webcast_live: e.webcast_live ?? false,
-    video_url: e.video_url || null,
-    external_url: e.info_url || null,
+    ...normalizeCachedLinks(e),
     launch_details: null,
   }));
 
@@ -333,8 +339,7 @@ async function getTimelineList({ includePast = false, pastDays = 365, futureDays
     latitude: l.pad_lat != null ? Number(l.pad_lat) : null,
     longitude: (l.pad_lon ?? l.pad_long) != null ? Number(l.pad_lon ?? l.pad_long) : null,
     webcast_live: l.webcast_live ?? false,
-    video_url: l.video_url || null,
-    external_url: l.info_url || null,
+    ...normalizeCachedLinks(l),
     launch_details: {
       rocket_model: l.rocket_model || null,
       provider: l.provider_name || null,
@@ -388,7 +393,9 @@ function dedupeEventListItems(events) {
 }
 
 function eventLinkScore(event) {
-  return (event.video_url ? 2 : 0) + (event.external_url ? 1 : 0) + (event.image_url ? 0.5 : 0);
+  return ((event.video_urls?.length || (event.video_url ? 1 : 0)) * 2) +
+    (event.external_urls?.length || (event.external_url ? 1 : 0)) +
+    (event.image_url ? 0.5 : 0);
 }
 
 function extractEvaCrew(description) {
@@ -409,19 +416,68 @@ function extractEvaCrew(description) {
 }
 
 function firstUrl(value) {
-  if (!Array.isArray(value)) return null;
-  for (const item of value) {
-    if (typeof item === "string" && item) return item;
-    if (item?.url) return item.url;
-    if (item?.info_url) return item.info_url;
-  }
-  return null;
+  return collectUrls(value)[0] || null;
+}
+
+function updateInfoUrls(updates) {
+  if (!Array.isArray(updates)) return null;
+  return updates.map((item) => item?.info_url).filter(Boolean);
 }
 
 function firstUpdateInfoUrl(updates) {
-  if (!Array.isArray(updates)) return null;
-  const update = updates.find((item) => item?.info_url);
-  return update?.info_url || null;
+  return updateInfoUrls(updates)?.[0] || null;
+}
+
+function collectUrls(...groups) {
+  const urls = [];
+  const seen = new Set();
+
+  for (const group of groups) {
+    const items = Array.isArray(group) ? group : group ? [group] : [];
+    for (const item of items) {
+      const url = typeof item === "string" ? item : item?.url || item?.info_url;
+      if (!url || seen.has(url)) continue;
+      seen.add(url);
+      urls.push(url);
+    }
+  }
+
+  return urls;
+}
+
+function serializeUrlList(urls) {
+  const cleanUrls = collectUrls(urls);
+  if (cleanUrls.length === 0) return null;
+  if (cleanUrls.length === 1) return cleanUrls[0];
+  return JSON.stringify(cleanUrls);
+}
+
+function parseUrlList(value) {
+  if (!value) return [];
+  if (Array.isArray(value)) return collectUrls(value);
+  const text = String(value).trim();
+  if (!text) return [];
+
+  if (text.startsWith("[")) {
+    try {
+      return collectUrls(JSON.parse(text));
+    } catch {
+      return [text];
+    }
+  }
+
+  return [text];
+}
+
+function normalizeCachedLinks(row) {
+  const videoUrls = parseUrlList(row.video_url);
+  const externalUrls = parseUrlList(row.info_url);
+  return {
+    video_url: videoUrls[0] || null,
+    video_urls: videoUrls,
+    external_url: externalUrls[0] || null,
+    external_urls: externalUrls,
+  };
 }
 
 function slugify(value) {

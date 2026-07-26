@@ -533,6 +533,10 @@ type EventDetailRouteParams = {
   description?: string | null;
   imageUrl?: string | null;
   location?: string | null;
+  videoUrl?: string | null;
+  videoUrls?: string[] | null;
+  externalUrl?: string | null;
+  externalUrls?: string[] | null;
   synthetic?: boolean;
 };
 
@@ -541,7 +545,7 @@ function eventDetailRoute(input: EventDetailRouteParams) {
 
   for (const [key, value] of Object.entries(input)) {
     if (value === null || value === undefined || value === '') continue;
-    params[key] = String(value);
+    params[key] = Array.isArray(value) ? JSON.stringify(value) : String(value);
   }
 
   return { pathname: '/events', params } as const;
@@ -1105,6 +1109,7 @@ export default function DashboardScreen({ locked = false }: DashboardScreenProps
               }
               thumb={<LaunchThumb imageUrl={nextLaunch?.image ?? null} />}
               onPress={() => router.push(eventDetailRoute({
+                eventId: nextLaunch?.event_id ?? null,
                 category: 'launch',
                 type: 'Rocket Launch',
                 name: nextLaunch?.name ?? 'Upcoming Launches',
@@ -1113,6 +1118,10 @@ export default function DashboardScreen({ locked = false }: DashboardScreenProps
                 description: nextLaunch?.mission?.description ?? formatLaunchMeta(nextLaunch),
                 imageUrl: nextLaunch?.image ?? null,
                 location: nextLaunch?.pad?.location ?? nextLaunch?.pad?.name ?? null,
+                videoUrl: nextLaunch?.video_url ?? null,
+                videoUrls: nextLaunch?.video_urls ?? null,
+                externalUrl: nextLaunch?.external_url ?? null,
+                externalUrls: nextLaunch?.external_urls ?? null,
                 synthetic: true,
               }) as any)}
               locked={isLocked}
