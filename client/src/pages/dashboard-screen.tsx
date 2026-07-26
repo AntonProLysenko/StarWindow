@@ -27,11 +27,13 @@ import { fetchVisibleBodies, type VisibleBody } from '@/utilities/bodies-api';
 import {
   fetchNextUpcomingSpacewalk,
   fetchNextUpcomingLaunch,
+  fetchNextUpcomingMeteorShower,
   getCalendarEventsForMonth,
   getNextCalendarEvent,
   type CalendarEvent,
   type UpcomingSpacewalk,
   type UpcomingLaunch,
+  type UpcomingMeteorShower,
 } from '@/utilities/events-api';
 import { fetchIssPasses, type IssPass } from '@/utilities/iss-api';
 import { fetchNearestLocation } from '@/utilities/location-api';
@@ -381,6 +383,58 @@ function formatBodiesMeta(bodies: VisibleBody[]) {
     .join(' | ');
 }
 
+function formatMeteorDate(value?: string | null) {
+  if (!value) return 'TBD';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'TBD';
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+function formatMeteorBadge({
+  isLoading,
+  error,
+  shower,
+}: {
+  isLoading: boolean;
+  error: string | null;
+  shower: UpcomingMeteorShower | null;
+}) {
+  if (isLoading) return 'LOADING';
+  if (error) return 'UNAVAILABLE';
+  return shower ? formatMeteorDate(shower.date) : 'NO SHOWER';
+}
+
+function formatMeteorMeta(shower: UpcomingMeteorShower | null, hasLocation: boolean) {
+  if (!shower) return 'No upcoming meteor shower found.';
+
+  const radiantAltitude = toNumber(shower.radiant_max_altitude_degrees);
+  const details = [
+    shower.radiant ? `Radiant ${shower.radiant}` : null,
+    shower.best_time ? `Best ${formatBestTimeLabel(shower.best_time)}` : null,
+    shower.zhr != null ? `ZHR ${shower.zhr}` : null,
+    hasLocation && radiantAltitude != null ? `Max altitude ${Math.round(radiantAltitude)} deg` : null,
+  ].filter(Boolean);
+
+  return joinDashboardMeta(details) || shower.description || 'Upcoming meteor shower.';
+}
+
+function joinDashboardMeta(parts: (string | null | undefined)[]) {
+  return parts
+    .filter((part): part is string => Boolean(part))
+    .map((part) => part.replace(/\s+/g, '\u00A0'))
+    .join('\u00A0|\u00A0');
+}
+
+function formatBestTimeLabel(value: string) {
+  const [hourPart, minutePart = '00'] = value.split(':');
+  const hour = Number(hourPart);
+  const minute = Number(minutePart);
+  if (!Number.isFinite(hour)) return value;
+  const date = new Date();
+  date.setHours(hour, Number.isFinite(minute) ? minute : 0, 0, 0);
+  return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+}
+
 function formatSpacewalkDate(value?: string | null) {
   if (!value) return 'TBD';
   const date = new Date(value);
@@ -547,6 +601,9 @@ export default function DashboardScreen({ locked = false }: DashboardScreenProps
   const [visibleBodies, setVisibleBodies] = useState<VisibleBody[]>([]);
   const [isBodiesLoading, setIsBodiesLoading] = useState(true);
   const [bodiesError, setBodiesError] = useState<string | null>(null);
+  const [nextMeteorShower, setNextMeteorShower] = useState<UpcomingMeteorShower | null>(null);
+  const [isMeteorLoading, setIsMeteorLoading] = useState(true);
+  const [meteorError, setMeteorError] = useState<string | null>(null);
   const [currentWeather, setCurrentWeather] = useState<WeatherResponse | null>(null);
   const [isWeatherLoading, setIsWeatherLoading] = useState(true);
   const [weatherError, setWeatherError] = useState<string | null>(null);
@@ -733,6 +790,24 @@ export default function DashboardScreen({ locked = false }: DashboardScreenProps
       }
     }
 
+    async function loadMeteorShower(coords?: { latitude: number; longitude: number }) {
+      try {
+        setIsMeteorLoading(true);
+        setMeteorError(null);
+        const shower = await fetchNextUpcomingMeteorShower({ latitude: coords?.latitude });
+        if (!isMounted) return;
+        setNextMeteorShower(shower);
+      } catch (error) {
+        console.log('Meteor shower fetch error:', error);
+        if (isMounted) {
+          setNextMeteorShower(null);
+          setMeteorError('Could not load meteor shower data');
+        }
+      } finally {
+        if (isMounted) setIsMeteorLoading(false);
+      }
+    }
+
     async function loadWeather(coords: { latitude: number; longitude: number }) {
       try {
         setIsWeatherLoading(true);
@@ -768,6 +843,7 @@ export default function DashboardScreen({ locked = false }: DashboardScreenProps
           setVisibleBodies([]);
           setIsBodiesLoading(false);
           setBodiesError(null);
+          void loadMeteorShower();
           setCurrentWeather(null);
           setIsWeatherLoading(false);
           setWeatherError(null);
@@ -786,6 +862,7 @@ export default function DashboardScreen({ locked = false }: DashboardScreenProps
         void loadViewingScore(coords);
         void loadIssPass(coords);
         void loadVisibleBodies(coords);
+        void loadMeteorShower(coords);
         void loadWeather(coords);
 
         try {
@@ -824,6 +901,7 @@ export default function DashboardScreen({ locked = false }: DashboardScreenProps
         setVisibleBodies([]);
         setIsBodiesLoading(false);
         setBodiesError(null);
+        void loadMeteorShower();
         setCurrentWeather(null);
         setIsWeatherLoading(false);
         setWeatherError(null);
@@ -1035,22 +1113,40 @@ export default function DashboardScreen({ locked = false }: DashboardScreenProps
             />
 
             <PreviewCard
-              eyebrow="MOON PHASE"
-              badge={moonPhasePercent === null ? 'LOADING' : 'LIVE'}
+              eyebrow="METEOR SHOWER"
+              badge={formatMeteorBadge({
+                isLoading: isMeteorLoading,
+                error: meteorError,
+                shower: nextMeteorShower,
+              })}
               badgeColor={Palette.accent}
-              title={moonPhaseName}
-              meta={`${formatMoonPercent(moonPhasePercent)} illuminated | ${formatMoonTrend(moonPhaseTrend)} | ${formatMoonDate(moonPhaseDate)}`}
-              thumb={
-
-                <MoonThumb
-                  imageUrl={moonImageUrl}
-                  phaseName={moonPhaseName}
-                  phasePercent={moonPhasePercent}
-                  phaseAngle={moonPhaseAngle}
-                  phaseTrend={moonPhaseTrend}
-                />
-
+              title={
+                isMeteorLoading
+                  ? 'Loading meteor shower...'
+                  : meteorError
+                  ? 'Meteor showers unavailable'
+                  : nextMeteorShower?.name ?? 'No upcoming meteor shower'
               }
+              meta={
+                isMeteorLoading
+                  ? 'Fetching the next major meteor shower.'
+                  : meteorError
+                  ? meteorError
+                  : formatMeteorMeta(nextMeteorShower, Boolean(browserCoords))
+              }
+              thumb={<MeteorThumb shower={nextMeteorShower} isLoading={isMeteorLoading} hasLocation={Boolean(browserCoords)} />}
+              onPress={() => router.push(eventDetailRoute({
+                eventId: nextMeteorShower?.event_id ?? nextMeteorShower?.id ?? null,
+                category: 'event',
+                type: nextMeteorShower?.type ?? 'Meteor Shower',
+                name: nextMeteorShower?.name ?? 'Upcoming Meteor Shower',
+                date: nextMeteorShower?.date ?? null,
+                datePrecision: nextMeteorShower?.date_precision ?? null,
+                description: nextMeteorShower?.description ?? formatMeteorMeta(nextMeteorShower, Boolean(browserCoords)),
+                imageUrl: nextMeteorShower?.image_url ?? null,
+                location: nextMeteorShower?.location ?? null,
+                synthetic: true,
+              }) as any)}
               locked={isLocked}
             />
 
@@ -1107,6 +1203,25 @@ export default function DashboardScreen({ locked = false }: DashboardScreenProps
               }
               thumb={<SpacewalkThumb spacewalk={nextSpacewalk} isLoading={isSpacewalkLoading} />}
               locked={isLocked}
+            />
+
+            <PreviewCard
+              eyebrow="MOON PHASE"
+              badge={moonPhasePercent === null ? 'LOADING' : 'LIVE'}
+              badgeColor={Palette.accent}
+              title={moonPhaseName}
+              meta={`${formatMoonPercent(moonPhasePercent)} illuminated | ${formatMoonTrend(moonPhaseTrend)} | ${formatMoonDate(moonPhaseDate)}`}
+              thumb={
+                <MoonThumb
+                  imageUrl={moonImageUrl}
+                  phaseName={moonPhaseName}
+                  phasePercent={moonPhasePercent}
+                  phaseAngle={moonPhaseAngle}
+                  phaseTrend={moonPhaseTrend}
+                />
+              }
+              locked={isLocked}
+              fullWidth
             />
 
             <PreviewCard
@@ -1268,6 +1383,7 @@ function PreviewCard({
   thumb,
   onPress,
   locked = false,
+  fullWidth = false,
 }: {
   eyebrow: string;
   badge: string;
@@ -1277,13 +1393,17 @@ function PreviewCard({
   thumb: React.ReactNode;
   onPress?: () => void;
   locked?: boolean;
+  fullWidth?: boolean;
 }) {
   const router = useRouter();
   const handlePress = locked ? () => router.push('/signup' as any) : onPress;
 
   return (
-    <Pressable style={styles.previewCard} onPress={handlePress} disabled={!handlePress}>
-      <View style={styles.previewThumb}>
+    <Pressable
+      style={[styles.previewCard, fullWidth && styles.previewCardFullWidth]}
+      onPress={handlePress}
+      disabled={!handlePress}>
+      <View style={[styles.previewThumb, fullWidth && styles.previewThumbFullWidth]}>
         <View style={locked ? styles.lockedThumbContent : styles.previewThumbContent}>
           {thumb}
         </View>
@@ -1647,6 +1767,57 @@ function BodiesThumb({ bodies, isLoading }: { bodies: VisibleBody[]; isLoading: 
           <Text style={styles.bodiesReadoutLabel}>VISIBLE TONIGHT</Text>
           <Text style={styles.bodiesReadoutValue}>
             {isLoading ? 'Checking sky...' : formatCount(bodies.length, 'body', 'bodies')}
+          </Text>
+        </View>
+      </View>
+    </View>
+  );
+}
+
+function MeteorThumb({
+  shower,
+  isLoading,
+  hasLocation,
+}: {
+  shower: UpcomingMeteorShower | null;
+  isLoading: boolean;
+  hasLocation: boolean;
+}) {
+  const altitude = toNumber(shower?.radiant_max_altitude_degrees);
+
+  return (
+    <View style={styles.meteorThumb}>
+      {shower?.image_url ? (
+        <Image source={{ uri: shower.image_url }} style={styles.meteorImage} resizeMode="cover" />
+      ) : (
+        <View style={styles.meteorFallback}>
+          <Text style={styles.meteorFallbackText}>M</Text>
+        </View>
+      )}
+      <View style={styles.meteorImageScrim} />
+      <View style={styles.issStatsRow}>
+        <View style={styles.issStatPill}>
+          <Text style={styles.issStatLabel}>PEAK</Text>
+          <Text style={styles.issStatValue}>
+            {isLoading ? '...' : formatMeteorDate(shower?.date)}
+          </Text>
+        </View>
+        <View style={styles.issStatPill}>
+          <Text style={styles.issStatLabel}>BEST</Text>
+          <Text style={styles.issStatValue}>
+            {isLoading ? '...' : shower?.best_time ? formatBestTimeLabel(shower.best_time) : '--'}
+          </Text>
+        </View>
+        <View style={styles.issStatPill}>
+          <Text style={styles.issStatLabel}>ZHR</Text>
+          <Text style={styles.issStatValue}>
+            {isLoading ? '...' : shower?.zhr ?? '--'}
+          </Text>
+        </View>
+        <View style={styles.issStatPill}>
+          <Text style={styles.issStatLabel}>ALT</Text>
+          <Text style={styles.issStatValue}>
+            {hasLocation && altitude != null ? `${Math.round(altitude)} deg` : '--'}
           </Text>
         </View>
       </View>
@@ -2136,11 +2307,18 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     minWidth: dvw(230),
   },
+  previewCardFullWidth: {
+    flexBasis: '100%',
+    minWidth: '100%' as any,
+  },
   previewThumb: {
     height: dvh(168),
     backgroundColor: Palette.bgDeep,
     borderBottomWidth: 1,
     borderBottomColor: Palette.borderSoft,
+  },
+  previewThumbFullWidth: {
+    height: dvh(220),
   },
   previewThumbContent: {
     flex: 1,
@@ -2521,6 +2699,31 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 
+  meteorThumb: {
+    flex: 1,
+    backgroundColor: Palette.bgDeep,
+    overflow: 'hidden',
+  },
+  meteorImage: {
+    width: '100%',
+    height: '100%',
+  },
+  meteorImageScrim: {
+    ...StyleSheet.absoluteFill,
+    backgroundColor: alpha(Palette.bgDeep, 0.28),
+  },
+  meteorFallback: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Palette.surfaceRaised,
+  },
+  meteorFallbackText: {
+    color: Palette.accent,
+    fontSize: 32,
+    lineHeight: 38,
+    fontWeight: '900',
+  },
   spacewalkThumb: {
     flex: 1,
     backgroundColor: Palette.bgDeep,

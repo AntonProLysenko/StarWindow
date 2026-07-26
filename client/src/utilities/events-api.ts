@@ -96,6 +96,8 @@ type EventsResponse = {
   results?: RawEvent[];
 };
 
+export type UpcomingMeteorShower = RawEvent;
+
 type LaunchesResponse = {
   count?: number;
   results?: RawLaunch[];
@@ -569,6 +571,22 @@ export async function fetchNextUpcomingSpacewalk(now = new Date()): Promise<Upco
   const latestSpacewalk = latestSpacewalksData.results?.[0] ?? null;
 
   return latestSpacewalk ? { ...latestSpacewalk, schedule_status: 'latest' } : null;
+}
+
+export async function fetchNextUpcomingMeteorShower(
+  input: { latitude?: number; now?: Date } = {}
+): Promise<UpcomingMeteorShower | null> {
+  const now = input.now ?? new Date();
+  const meteorParams = new URLSearchParams({
+    limit: '1',
+    from_date: now.toISOString(),
+  });
+  if (typeof input.latitude === 'number' && Number.isFinite(input.latitude)) {
+    meteorParams.set('latitude', String(input.latitude));
+  }
+
+  const meteorData = await sendRequest<null, EventsResponse>(`${METEOR_SHOWERS_URL}?${meteorParams}`);
+  return meteorData.results?.[0] ?? null;
 }
 
 export function getCalendarEventsForMonth(events: CalendarEvent[], year: number, month: number) {
