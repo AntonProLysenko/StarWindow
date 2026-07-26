@@ -27,6 +27,8 @@ async function create(userData) {
   // as they earn points (see db/queries/leveling.js syncUserLevel).
   const status_id = await getBaseStatusId();
 
+  validatePassword(password);
+
   const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
 
   let result;
@@ -103,11 +105,40 @@ async function updateProfile(userId, userData) {
   const email = String(userData.email || "").toLowerCase().trim();
   const f_name = String(userData.f_name || "").trim();
   const l_name = String(userData.l_name || "").trim();
+  const currentPassword = String(userData.current_password || "").trim();
+  const newPassword = String(userData.new_password || "").trim();
+  const confirmNewPassword = String(userData.confirm_new_password || "").trim();
 
   if (!f_name || !l_name || !email) {
     const error = new Error("First name, last name, and email are required.");
     error.status = 400;
     throw error;
+  }
+
+  if (!currentPassword) {
+    throw new Error("Current password is required.");
+  }
+
+  if (newPassword || confirmNewPassword) {
+    validatePassword(newPassword);
+
+    if (newPassword !== confirmNewPassword) {
+      throw new Error("Passwords do not match.");
+    }
+  }
+
+  const existingUser = await database.query(
+    "SELECT user_id, password FROM public.users WHERE user_id = $1 LIMIT 1",
+    [userId]
+  );
+
+  if (existingUser.rows.length === 0) {
+    return null;
+  }
+
+  const passwordMatches = await bcrypt.compare(currentPassword, existingUser.rows[0].password);
+  if (!passwordMatches) {
+    throw new Error("Current password is incorrect.");
   }
 
   const duplicate = await database.query(
@@ -127,17 +158,31 @@ async function updateProfile(userId, userData) {
     throw error;
   }
 
-  const result = await database.query(
-    `
-      UPDATE public.users
-      SET email = $2,
-          f_name = $3,
-          l_name = $4
-      WHERE user_id = $1
-      RETURNING user_id
-    `,
-    [userId, email, f_name, l_name]
-  );
+  const passwordHash = newPassword ? await bcrypt.hash(newPassword, SALT_ROUNDS) : null;
+  const result = passwordHash
+    ? await database.query(
+        `
+          UPDATE public.users
+          SET email = $2,
+              f_name = $3,
+              l_name = $4,
+              password = $5
+          WHERE user_id = $1
+          RETURNING user_id
+        `,
+        [userId, email, f_name, l_name, passwordHash]
+      )
+    : await database.query(
+        `
+          UPDATE public.users
+          SET email = $2,
+              f_name = $3,
+              l_name = $4
+          WHERE user_id = $1
+          RETURNING user_id
+        `,
+        [userId, email, f_name, l_name]
+      );
 
   if (result.rows.length === 0) return null;
   return findById(userId);

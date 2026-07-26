@@ -9,5 +9,10 @@ export interface EventType {
 }
 
 export function getEventTypes(): Promise<EventType[]> {
-  return sendRequest(BASE_URL);
+  return sendRequest<null, EventType[]>(BASE_URL).then((eventTypes) =>
+    eventTypes.map((eventType) => ({
+      ...eventType,
+      event_type_id: Number(eventType.event_type_id),
+    }))
+  );
 }

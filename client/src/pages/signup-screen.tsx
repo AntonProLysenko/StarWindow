@@ -35,6 +35,8 @@ export default function SignUpScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showEventTypes, setShowEventTypes] = useState(false);
@@ -125,6 +127,12 @@ export default function SignUpScreen() {
   const handleSignUp = async () => {
     if (!firstName.trim() || !lastName.trim() || !email.trim() || !password) {
       setError('All fields are required.');
+      return;
+    }
+
+    const passwordError = usersService.getPasswordValidationError(password);
+    if (passwordError) {
+      setError(passwordError);
       return;
     }
 
@@ -328,29 +336,63 @@ export default function SignUpScreen() {
                   autoCorrect={false}
                 />
 
-                <TextInput
-                  style={[styles.input, { padding: inputPad }]}
-                  placeholder="Password"
-                  placeholderTextColor={Palette.textTertiary}
-                  value={password}
-                  onChangeText={(value) => {
-                    setPassword(value);
-                    setError('');
-                  }}
-                  secureTextEntry
-                />
+                <View style={styles.passwordInputWrap}>
+                  <TextInput
+                    style={[styles.passwordTextInput, { padding: inputPad }]}
+                    placeholder="Password"
+                    placeholderTextColor={Palette.textTertiary}
+                    value={password}
+                    onChangeText={(value) => {
+                      setPassword(value);
+                      setError('');
+                    }}
+                    secureTextEntry={!showPassword}
+                  />
+                  <TouchableOpacity
+                    style={styles.passwordIconButton}
+                    onPress={() => setShowPassword((visible) => !visible)}
+                    activeOpacity={0.8}
+                    accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}>
+                    <SymbolView
+                      name={{
+                        ios: showPassword ? 'eye.slash.fill' : 'eye.fill',
+                        android: showPassword ? 'visibility_off' : 'visibility',
+                        web: showPassword ? 'visibility_off' : 'visibility',
+                      }}
+                      size={18}
+                      tintColor={Palette.textTertiary}
+                    />
+                  </TouchableOpacity>
+                </View>
 
-                <TextInput
-                  style={[styles.input, { padding: inputPad }]}
-                  placeholder="Repeat Password"
-                  placeholderTextColor={Palette.textTertiary}
-                  value={confirm}
-                  onChangeText={(value) => {
-                    setConfirm(value);
-                    setError('');
-                  }}
-                  secureTextEntry
-                />
+                <View style={styles.passwordInputWrap}>
+                  <TextInput
+                    style={[styles.passwordTextInput, { padding: inputPad }]}
+                    placeholder="Repeat Password"
+                    placeholderTextColor={Palette.textTertiary}
+                    value={confirm}
+                    onChangeText={(value) => {
+                      setConfirm(value);
+                      setError('');
+                    }}
+                    secureTextEntry={!showConfirmPassword}
+                  />
+                  <TouchableOpacity
+                    style={styles.passwordIconButton}
+                    onPress={() => setShowConfirmPassword((visible) => !visible)}
+                    activeOpacity={0.8}
+                    accessibilityLabel={showConfirmPassword ? 'Hide repeat password' : 'Show repeat password'}>
+                    <SymbolView
+                      name={{
+                        ios: showConfirmPassword ? 'eye.slash.fill' : 'eye.fill',
+                        android: showConfirmPassword ? 'visibility_off' : 'visibility',
+                        web: showConfirmPassword ? 'visibility_off' : 'visibility',
+                      }}
+                      size={18}
+                      tintColor={Palette.textTertiary}
+                    />
+                  </TouchableOpacity>
+                </View>
 
                 <TouchableOpacity
                   onPress={handleSignUp}
@@ -477,6 +519,27 @@ const styles = StyleSheet.create({
     color: Palette.textSecondary,
     fontSize: 13,
     marginBottom: 8,
+  },
+  passwordInputWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Palette.surface,
+    borderWidth: 1,
+    borderColor: Palette.border,
+    borderRadius: Radius.sm,
+    marginBottom: 8,
+  },
+  passwordTextInput: {
+    flex: 1,
+    color: Palette.textSecondary,
+    fontSize: 13,
+    outlineStyle: 'none' as any,
+  },
+  passwordIconButton: {
+    width: 42,
+    minHeight: dvh(40),
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   stepTitle: {
     color: Palette.textPrimary,

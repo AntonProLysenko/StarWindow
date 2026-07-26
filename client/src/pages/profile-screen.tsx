@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'expo-router';
+import { SymbolView } from 'expo-symbols';
 import {
   ActivityIndicator,
   Pressable,
@@ -63,6 +64,13 @@ export default function ProfileScreen() {
   const router = useRouter();
   const [user, setUser] = useState<usersService.AuthUser | null>(() => usersService.getUser());
   const [activeTab, setActiveTab] = useState<ProfileTab>('saved-events');
+  const [savedEvents, setSavedEvents] = useState<SavedUserEvent[]>([]);
+  const [isSavedEventsLoading, setIsSavedEventsLoading] = useState(true);
+  const [savedEventsError, setSavedEventsError] = useState('');
+  const [selectedSavedEvent, setSelectedSavedEvent] = useState<SavedUserEvent | null>(null);
+  const [userLat, setUserLat] = useState<number | null>(null);
+  const [userLon, setUserLon] = useState<number | null>(null);
+  const hasToken = Boolean(usersService.getToken());
 
   useEffect(() => {
     if (!usersService.getToken()) router.replace('/');
@@ -81,6 +89,67 @@ export default function ProfileScreen() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const location = await getOrRequestUserLocation();
+        if (cancelled || !location) return;
+        setUserLat(location.latitude);
+        setUserLon(location.longitude);
+      } catch {
+        if (cancelled) return;
+        setUserLat(null);
+        setUserLon(null);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const controller = new AbortController();
+
+    if (!hasToken) {
+      setIsSavedEventsLoading(false);
+      return () => controller.abort();
+    }
+
+    setIsSavedEventsLoading(true);
+    setSavedEventsError('');
+    fetchSavedUserEvents(controller.signal)
+      .then((events) => {
+        if (!cancelled) setSavedEvents(events);
+      })
+      .catch((err) => {
+        if (cancelled || (err instanceof Error && err.name === 'AbortError')) return;
+        setSavedEventsError(err instanceof Error ? err.message : 'Could not load saved events.');
+      })
+      .finally(() => {
+        if (!cancelled) setIsSavedEventsLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [hasToken, user?.user_id]);
+
+  const handleSavedEventUpdated = (updates: { event_comment?: string | null; event_rating?: number | null }) => {
+    if (!selectedSavedEvent) return;
+
+    setSelectedSavedEvent((current) => (current ? { ...current, ...updates } : current));
+    setSavedEvents((current) =>
+      current.map((event) =>
+        event.user_event_id === selectedSavedEvent.user_event_id ? { ...event, ...updates } : event
+      )
+    );
+  };
 
   const progressLabel = getUserLevelProgressLabel(user);
   const progressPercent = getUserLevelProgressPercent(user);
@@ -144,9 +213,26 @@ export default function ProfileScreen() {
         {activeTab === 'edit-profile' ? (
           <EditProfile user={user} onUserChange={setUser} />
         ) : (
-          <MySavedEvents user={user} />
+          <MySavedEvents
+            events={savedEvents}
+            error={savedEventsError}
+            hasToken={hasToken}
+            isLoading={isSavedEventsLoading}
+            onSelectEvent={setSelectedSavedEvent}
+          />
         )}
       </ScrollView>
+
+      {selectedSavedEvent ? (
+        <EventModal
+          event={selectedSavedEvent}
+          onClose={() => setSelectedSavedEvent(null)}
+          onSavedEventUpdated={handleSavedEventUpdated}
+          userId={user?.user_id ?? null}
+          userLat={userLat}
+          userLon={userLon}
+        />
+      ) : null}
     </SafeAreaView>
   );
 }
@@ -162,6 +248,9 @@ function EditProfile({
   const [firstName, setFirstName] = useState(user?.f_name ?? '');
   const [lastName, setLastName] = useState(user?.l_name ?? '');
   const [email, setEmail] = useState(user?.email ?? '');
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmNewPassword, setConfirmNewPassword] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [message, setMessage] = useState('');
@@ -212,7 +301,8 @@ function EditProfile({
   const hasChanges =
     firstName.trim() !== (user?.f_name ?? '') ||
     lastName.trim() !== (user?.l_name ?? '') ||
-    email.trim().toLowerCase() !== (user?.email ?? '').toLowerCase();
+    email.trim().toLowerCase() !== (user?.email ?? '').toLowerCase() ||
+    Boolean(newPassword || confirmNewPassword);
   const hasPreferenceChanges = !sameIds(selectedEventTypeIds, savedEventTypeIds);
 
   const handleSave = async () => {
@@ -220,6 +310,27 @@ function EditProfile({
       setError('First name, last name, and email are required.');
       setMessage('');
       return;
+    }
+
+    if (!currentPassword.trim()) {
+      setError('Current password is required to save account changes.');
+      setMessage('');
+      return;
+    }
+
+    if (newPassword || confirmNewPassword) {
+      const passwordError = usersService.getPasswordValidationError(newPassword);
+      if (passwordError) {
+        setError(passwordError);
+        setMessage('');
+        return;
+      }
+
+      if (newPassword !== confirmNewPassword) {
+        setError('Passwords do not match.');
+        setMessage('');
+        return;
+      }
     }
 
     setIsSaving(true);
@@ -231,9 +342,15 @@ function EditProfile({
         f_name: firstName.trim(),
         l_name: lastName.trim(),
         email: email.trim(),
+        current_password: currentPassword.trim(),
+        new_password: newPassword ? newPassword : null,
+        confirm_new_password: confirmNewPassword ? confirmNewPassword : null,
       });
       onUserChange(updatedUser);
-      setMessage('Profile updated.');
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmNewPassword('');
+      setMessage(newPassword ? 'Profile and password updated.' : 'Profile updated.');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not update profile.');
     } finally {
@@ -245,6 +362,9 @@ function EditProfile({
     setFirstName(user?.f_name ?? '');
     setLastName(user?.l_name ?? '');
     setEmail(user?.email ?? '');
+    setCurrentPassword('');
+    setNewPassword('');
+    setConfirmNewPassword('');
     setError('');
     setMessage('');
   };
@@ -293,6 +413,13 @@ function EditProfile({
           </View>
         ) : (
           <>
+            <ProfileField
+              label="Current Password"
+              value={currentPassword}
+              onChangeText={setCurrentPassword}
+              autoCapitalize="none"
+              secureTextEntry
+            />
             <ProfileField label="First Name" value={firstName} onChangeText={setFirstName} autoCapitalize="words" />
             <ProfileField label="Last Name" value={lastName} onChangeText={setLastName} autoCapitalize="words" />
             <ProfileField
@@ -301,6 +428,20 @@ function EditProfile({
               onChangeText={setEmail}
               autoCapitalize="none"
               keyboardType="email-address"
+            />
+            <ProfileField
+              label="New Password"
+              value={newPassword}
+              onChangeText={setNewPassword}
+              autoCapitalize="none"
+              secureTextEntry
+            />
+            <ProfileField
+              label="Confirm New Password"
+              value={confirmNewPassword}
+              onChangeText={setConfirmNewPassword}
+              autoCapitalize="none"
+              secureTextEntry
             />
 
             {!!error && <Text style={styles.errorText}>{error}</Text>}
@@ -319,13 +460,6 @@ function EditProfile({
             </View>
           </>
         )}
-      </View>
-
-      <View style={styles.panel}>
-        <Text style={styles.panelEyebrow}>READ ONLY</Text>
-        <InfoRow label="User ID" value={user?.user_id != null ? String(user.user_id) : '--'} />
-        <InfoRow label="Status" value={user?.status ?? 'Unavailable'} />
-        <InfoRow label="Status ID" value={user?.status_id != null ? String(user.status_id) : '--'} />
       </View>
 
       <View style={styles.panel}>
@@ -384,117 +518,52 @@ function EditProfile({
   );
 }
 
-function MySavedEvents({ user }: { user: usersService.AuthUser | null }) {
-  const [events, setEvents] = useState<SavedUserEvent[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [selectedEvent, setSelectedEvent] = useState<SavedUserEvent | null>(null);
-  const [userLat, setUserLat] = useState<number | null>(null);
-  const [userLon, setUserLon] = useState<number | null>(null);
-  const hasToken = Boolean(usersService.getToken());
-
-  const handleSavedEventUpdated = (updates: { event_comment?: string | null; event_rating?: number | null }) => {
-    if (!selectedEvent) return;
-    setSelectedEvent((current) => (current ? { ...current, ...updates } : current));
-    setEvents((current) =>
-      current.map((event) =>
-        event.user_event_id === selectedEvent.user_event_id ? { ...event, ...updates } : event
-      )
-    );
-  };
-
-  useEffect(() => {
-    let cancelled = false;
-
-    (async () => {
-      try {
-        const location = await getOrRequestUserLocation();
-        if (cancelled || !location) return;
-        if (cancelled) return;
-        setUserLat(location.latitude);
-        setUserLon(location.longitude);
-      } catch {
-        if (cancelled) return;
-        setUserLat(null);
-        setUserLon(null);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    const controller = new AbortController();
-
-    if (!hasToken) return () => controller.abort();
-
-    fetchSavedUserEvents(controller.signal)
-      .then((savedEvents) => {
-        if (!cancelled) setEvents(savedEvents);
-      })
-      .catch((err) => {
-        if (cancelled || (err instanceof Error && err.name === 'AbortError')) return;
-        setError(err instanceof Error ? err.message : 'Could not load saved events.');
-      })
-      .finally(() => {
-        if (!cancelled) setIsLoading(false);
-      });
-
-    return () => {
-      cancelled = true;
-      controller.abort();
-    };
-  }, [hasToken, user?.user_id]);
-
+function MySavedEvents({
+  events,
+  error,
+  hasToken,
+  isLoading,
+  onSelectEvent,
+}: {
+  events: SavedUserEvent[];
+  error: string;
+  hasToken: boolean;
+  isLoading: boolean;
+  onSelectEvent: (event: SavedUserEvent) => void;
+}) {
   return (
-    <>
-      <View style={styles.grid}>
-        <View style={[styles.panel, styles.fullPanel]}>
-          <Text style={styles.panelEyebrow}>MY SAVED EVENTS</Text>
-          <Text style={styles.panelCopy}>Events you saved from the events list.</Text>
+    <View style={styles.grid}>
+      <View style={[styles.panel, styles.fullPanel]}>
+        <Text style={styles.panelEyebrow}>MY SAVED EVENTS</Text>
+        <Text style={styles.panelCopy}>Events you saved from the events list.</Text>
 
-          {!hasToken ? (
-            <Text style={styles.errorText}>Log in to see your saved events.</Text>
-          ) : isLoading ? (
-            <View style={styles.loadingRow}>
-              <ActivityIndicator color={Palette.accent} />
-              <Text style={styles.loadingText}>Loading saved events...</Text>
-            </View>
-          ) : error ? (
-            <Text style={styles.errorText}>{error}</Text>
-          ) : events.length === 0 ? (
-            <View style={styles.emptyState}>
-              <Text style={styles.emptyTitle}>No saved events yet.</Text>
-              <Text style={styles.emptyCopy}>Save events from the Events page and they will appear here.</Text>
-            </View>
-          ) : (
-            <View style={styles.savedEventsList}>
-              {events.map((event) => (
-                <EventCard
-                  key={String(event.user_event_id)}
-                  event={event}
-                  onPress={(pressedEvent) => setSelectedEvent(pressedEvent as SavedUserEvent)}
-                />
-              ))}
-            </View>
-          )}
-        </View>
+        {!hasToken ? (
+          <Text style={styles.errorText}>Log in to see your saved events.</Text>
+        ) : isLoading ? (
+          <View style={styles.loadingRow}>
+            <ActivityIndicator color={Palette.accent} />
+            <Text style={styles.loadingText}>Loading saved events...</Text>
+          </View>
+        ) : error ? (
+          <Text style={styles.errorText}>{error}</Text>
+        ) : events.length === 0 ? (
+          <View style={styles.emptyState}>
+            <Text style={styles.emptyTitle}>No saved events yet.</Text>
+            <Text style={styles.emptyCopy}>Save events from the Events page and they will appear here.</Text>
+          </View>
+        ) : (
+          <View style={styles.savedEventsList}>
+            {events.map((event) => (
+              <EventCard
+                key={String(event.user_event_id)}
+                event={event}
+                onPress={(pressedEvent) => onSelectEvent(pressedEvent as SavedUserEvent)}
+              />
+            ))}
+          </View>
+        )}
       </View>
-
-      {selectedEvent ? (
-        <EventModal
-          event={selectedEvent}
-          onClose={() => setSelectedEvent(null)}
-          onSavedEventUpdated={handleSavedEventUpdated}
-          userId={user?.user_id ?? null}
-          userLat={userLat}
-          userLon={userLon}
-        />
-      ) : null}
-    </>
+    </View>
   );
 }
 
@@ -504,34 +573,59 @@ function ProfileField({
   onChangeText,
   autoCapitalize,
   keyboardType,
+  secureTextEntry,
 }: {
   label: string;
   value: string;
   onChangeText: (value: string) => void;
   autoCapitalize?: 'none' | 'sentences' | 'words' | 'characters';
   keyboardType?: 'default' | 'email-address';
+  secureTextEntry?: boolean;
 }) {
+  const [isPasswordVisible, setIsPasswordVisible] = useState(false);
+  const shouldMaskInput = Boolean(secureTextEntry && !isPasswordVisible);
+
   return (
     <View style={styles.field}>
       <Text style={styles.fieldLabel}>{label}</Text>
-      <TextInput
-        style={styles.input}
-        value={value}
-        onChangeText={onChangeText}
-        placeholderTextColor={Palette.textTertiary}
-        autoCapitalize={autoCapitalize}
-        keyboardType={keyboardType}
-        autoCorrect={false}
-      />
-    </View>
-  );
-}
-
-function InfoRow({ label, value }: { label: string; value: string }) {
-  return (
-    <View style={styles.infoRow}>
-      <Text style={styles.infoLabel}>{label}</Text>
-      <Text style={styles.infoValue}>{value}</Text>
+      {secureTextEntry ? (
+        <View style={styles.passwordInputWrap}>
+          <TextInput
+            style={styles.passwordTextInput}
+            value={value}
+            onChangeText={onChangeText}
+            placeholderTextColor={Palette.textTertiary}
+            autoCapitalize={autoCapitalize}
+            keyboardType={keyboardType}
+            secureTextEntry={shouldMaskInput}
+            autoCorrect={false}
+          />
+          <Pressable
+            style={styles.passwordIconButton}
+            onPress={() => setIsPasswordVisible((visible) => !visible)}
+            aria-label={isPasswordVisible ? `Hide ${label}` : `Show ${label}`}>
+            <SymbolView
+              name={{
+                ios: isPasswordVisible ? 'eye.slash.fill' : 'eye.fill',
+                android: isPasswordVisible ? 'visibility_off' : 'visibility',
+                web: isPasswordVisible ? 'visibility_off' : 'visibility',
+              }}
+              size={18}
+              tintColor={Palette.textTertiary}
+            />
+          </Pressable>
+        </View>
+      ) : (
+        <TextInput
+          style={styles.input}
+          value={value}
+          onChangeText={onChangeText}
+          placeholderTextColor={Palette.textTertiary}
+          autoCapitalize={autoCapitalize}
+          keyboardType={keyboardType}
+          autoCorrect={false}
+        />
+      )}
     </View>
   );
 }
@@ -711,6 +805,29 @@ const styles = StyleSheet.create({
     fontSize: 15,
     outlineStyle: 'none' as any,
   },
+  passwordInputWrap: {
+    minHeight: dvh(46),
+    borderWidth: 1,
+    borderColor: Palette.border,
+    borderRadius: Radius.sm,
+    backgroundColor: Palette.surface,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  passwordTextInput: {
+    flex: 1,
+    color: Palette.textPrimary,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    fontSize: 15,
+    outlineStyle: 'none' as any,
+  },
+  passwordIconButton: {
+    width: 44,
+    minHeight: dvh(44),
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   actionRow: {
     flexDirection: 'row',
     gap: 10,
@@ -800,22 +917,5 @@ const styles = StyleSheet.create({
     color: Palette.textSecondary,
     fontSize: 14,
     lineHeight: 20,
-  },
-  infoRow: {
-    borderBottomWidth: 1,
-    borderBottomColor: Palette.borderSoft,
-    paddingVertical: 10,
-    gap: 4,
-  },
-  infoLabel: {
-    color: Palette.textTertiary,
-    fontSize: 12,
-    fontWeight: '800',
-    textTransform: 'uppercase',
-  },
-  infoValue: {
-    color: Palette.textPrimary,
-    fontSize: 16,
-    fontWeight: '700',
   },
 });

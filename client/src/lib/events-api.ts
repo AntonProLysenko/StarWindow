@@ -48,6 +48,7 @@ export interface EventListItem {
   webcast_live: boolean;
   video_url: string | null;
   launch_details: LaunchDetails | null;
+  user_event_images?: SavedUserEventImage[];
 }
 
 export interface SavedUserEvent extends EventListItem {
@@ -74,6 +75,13 @@ export interface UserPointAward {
   status: string | null;
   next_level_points: number | null;
   points_to_next_level: number;
+}
+
+export interface ImgbbDeletionSummary {
+  attempted: number;
+  deleted: number;
+  skipped: number;
+  failed: number;
 }
 
 export interface SaveUserEventResponse {
@@ -105,12 +113,14 @@ export interface DeleteUserEventResponse {
   deleted: boolean;
   user_event_id: string;
   reversals: UserPointAward[];
+  imgbb_deletions?: ImgbbDeletionSummary;
 }
 
 export interface DeleteUserEventImageResponse {
   deleted: boolean;
   user_event_image_id: string;
   progress: UserPointAward | null;
+  imgbb_deleted?: boolean | null;
 }
 
 export interface ViewingScoreResponse {
@@ -140,6 +150,7 @@ export async function checkEventSaved(
   user_event_id: string | null;
   event_comment: string | null;
   event_rating: number | null;
+  user_event_images: SavedUserEventImage[];
 }> {
   const params = new URLSearchParams({ event_id: String(eventId) });
   return sendRequest<null, {
@@ -147,6 +158,7 @@ export async function checkEventSaved(
     user_event_id: string | null;
     event_comment: string | null;
     event_rating: number | null;
+    user_event_images: SavedUserEventImage[];
   }>(`${API_BASE}/api/user-events?${params}`, 'GET', null, { signal });
 }
 
@@ -190,7 +202,7 @@ export function updateSavedUserEvent(
 
 export function addSavedUserEventImage(
   userEventId: number | string,
-  data: { image_url: string; caption?: string | null }
+  data: { image_url: string; imgbb_delete_url?: string | null; caption?: string | null }
 ): Promise<UserEventImage> {
   return sendRequest<typeof data, UserEventImage>(
     `${API_BASE}/api/user-events/${userEventId}/images`,

@@ -3,6 +3,7 @@ import type {
   AuthUser,
   LoginCredentials,
   SignUpData,
+  UpdateCurrentUserData,
   UserLevelSummary,
   UserPointHistoryItem,
 } from './users-service';
@@ -35,7 +36,7 @@ export function getUserPointHistory(limit?: number): Promise<UserPointHistoryIte
   return sendRequest(`${BASE_URL}/points/history${params}`);
 }
 
-export function updateCurrentUser(userData: Pick<AuthUser, 'f_name' | 'l_name' | 'email'>): Promise<string> {
+export function updateCurrentUser(userData: UpdateCurrentUserData): Promise<string> {
   return sendRequest(`${BASE_URL}/me`, 'PUT', userData);
 }
 

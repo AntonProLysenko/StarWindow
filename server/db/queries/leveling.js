@@ -70,35 +70,44 @@ async function reverseUserPoints(userId, actionCode, sourceType, sourceKey, clie
     });
   }
 
-  const pointsToReverse = -Math.min(Math.abs(actionPoints), balance.netPoints);
-  const inserted = await conn.query(
+  const pointsToReverse = Math.min(Math.abs(actionPoints), balance.netPoints);
+  const deleted = await conn.query(
     `
-      INSERT INTO public.user_point_event_history (
-        user_id,
-        action_code,
-        points,
-        source_type,
-        source_key
+      WITH ranked_awards AS (
+        SELECT
+          user_point_event_history_id,
+          points,
+          SUM(points) OVER (
+            ORDER BY created_at DESC, user_point_event_history_id DESC
+          ) AS running_points
+        FROM public.user_point_event_history
+        WHERE user_id = $1
+          AND action_code = $2
+          AND points > 0
+          AND (
+            source_key = $3
+            OR LEFT(source_key, LENGTH($4)) = $4
+          )
+      ),
+      awards_to_remove AS (
+        SELECT user_point_event_history_id
+        FROM ranked_awards
+        WHERE running_points - points < $5
       )
-      VALUES ($1, $2, $3, $4, $5)
-      ON CONFLICT (user_id, action_code, source_key) DO NOTHING
-      RETURNING points
+      DELETE FROM public.user_point_event_history h
+      USING awards_to_remove r
+      WHERE h.user_point_event_history_id = r.user_point_event_history_id
+      RETURNING h.points
     `,
-    [
-      userId,
-      actionCode,
-      pointsToReverse,
-      sourceType,
-      buildHistorySourceKey(sourceKey, "reverse", balance.entryCount),
-    ]
+    [userId, actionCode, sourceKey, `${sourceKey}:`, pointsToReverse]
   );
 
-  const pointsReversed = Number(inserted.rows[0]?.points ?? 0);
+  const pointsReversed = deleted.rows.reduce((sum, row) => sum + Number(row.points ?? 0), 0);
 
   return buildProgressResponse(conn, userId, {
     awarded: false,
-    reversed: pointsReversed < 0,
-    pointsDelta: pointsReversed,
+    reversed: pointsReversed > 0,
+    pointsDelta: -pointsReversed,
   });
 }
 

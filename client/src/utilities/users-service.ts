@@ -1,5 +1,8 @@
 import * as usersAPI from './users-api';
 
+export const PASSWORD_REQUIREMENTS_MESSAGE =
+  'Password must be at least 8 characters and include one uppercase letter, one number, and one special symbol.';
+
 export interface AuthUser {
   user_id: number;
   email: string;
@@ -46,6 +49,15 @@ export interface LoginCredentials {
   password: string;
 }
 
+export interface UpdateCurrentUserData {
+  f_name: string;
+  l_name: string;
+  email: string;
+  current_password: string;
+  new_password?: string | null;
+  confirm_new_password?: string | null;
+}
+
 interface TokenPayload {
   exp?: number;
   user?: AuthUser;
@@ -70,6 +82,19 @@ export function saveEventTypes(eventTypeIds: number[]) {
   return usersAPI.saveEventTypes(eventTypeIds);
 }
 
+export function getPasswordValidationError(password: string): string | null {
+  if (
+    password.length < 8 ||
+    !/[A-Z]/.test(password) ||
+    !/\d/.test(password) ||
+    !/[^A-Za-z0-9]/.test(password)
+  ) {
+    return PASSWORD_REQUIREMENTS_MESSAGE;
+  }
+
+  return null;
+}
+
 export function getCurrentUser(): Promise<AuthUser> {
   return usersAPI.getCurrentUser();
 }
@@ -82,7 +107,7 @@ export function getUserPointHistory(limit?: number): Promise<UserPointHistoryIte
   return usersAPI.getUserPointHistory(limit);
 }
 
-export async function updateCurrentUser(userData: Pick<AuthUser, 'f_name' | 'l_name' | 'email'>): Promise<AuthUser | null> {
+export async function updateCurrentUser(userData: UpdateCurrentUserData): Promise<AuthUser | null> {
   const token = await usersAPI.updateCurrentUser(userData);
   setToken(token);
   return getCurrentUser().catch(() => getUser());

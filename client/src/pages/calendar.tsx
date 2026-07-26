@@ -3,14 +3,21 @@ import { Pressable, ScrollView, StyleSheet, View, useWindowDimensions } from 're
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { MonthGrid } from '@/components/calendar/month-grid';
+import { EventModal } from '@/components/events/event-modal';
 import { ShootingStar } from '@/components/shooting-star';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Palette, Radius, Spacing } from '@/constants/tokens';
 import { useCalendarEvents } from '@/hooks/use-calendar-events';
 import { getEventIconByType } from '@/lib/event-icons';
-import { getCalendarEventsForDate, getCalendarEventsForMonth } from '@/utilities/events-api';
+import type { EventListItem } from '@/lib/events-api';
+import {
+  getCalendarEventsForDate,
+  getCalendarEventsForMonth,
+  type CalendarEvent,
+} from '@/utilities/events-api';
 import { getOrRequestUserLocation } from '@/utilities/user-location-service';
+import { getUser } from '@/utilities/users-service';
 import { dvw, dvh } from '@/utilities/responsive-dimensions';
 
 const categories = ['Meteor Showers', 'Rocket Launches', 'Alignments', 'More Filters'];
@@ -24,6 +31,29 @@ const STARS = Array.from({ length: 72 }, (_, i) => ({
   opacity: (i % 6) * 0.08 + 0.15,
 }));
 const SHOOTING_STAR_DELAYS = [0, 2400];
+
+function calendarEventToEventListItem(event: CalendarEvent): EventListItem {
+  const type = event.type ?? 'Event';
+  const isLaunch = event.category === 'launch' || type.toLowerCase().includes('launch');
+
+  return {
+    id: event.sourceId ?? event.id,
+    event_id: event.eventId ?? event.id,
+    category: isLaunch ? 'launch' : 'event',
+    name: event.title,
+    type,
+    date: event.startDate,
+    date_precision: event.datePrecision ?? null,
+    description: event.detail,
+    image_url: event.imageUrl ?? null,
+    location: event.location ?? null,
+    latitude: event.latitude ?? null,
+    longitude: event.longitude ?? null,
+    webcast_live: event.webcastLive ?? false,
+    video_url: event.videoUrl ?? null,
+    launch_details: event.launchDetails ?? null,
+  };
+}
 
 function formatDateForApi(date: Date) {
   const year = date.getFullYear();
@@ -97,6 +127,8 @@ export default function CalendarScreen() {
   );
   const [browserCoords, setBrowserCoords] = useState<{ latitude: number; longitude: number } | null>(null);
   const [locationNotice, setLocationNotice] = useState('Requesting browser location for visible sky events.');
+  const [selectedEvent, setSelectedEvent] = useState<EventListItem | null>(null);
+  const userId = getUser()?.user_id ?? null;
 
   useEffect(() => {
     let cancelled = false;
@@ -261,7 +293,10 @@ export default function CalendarScreen() {
                     showsVerticalScrollIndicator
                     contentContainerStyle={styles.eventList}>
                     {selectedDayEvents.map((event) => (
-                      <ThemedView key={event.id} style={styles.eventCard}>
+                      <Pressable
+                        key={event.id}
+                        onPress={() => setSelectedEvent(calendarEventToEventListItem(event))}
+                        style={({ pressed }) => [styles.eventCard, pressed && styles.pressed]}>
                         <View style={styles.eventCardIconBox}>
                           <ThemedText style={styles.eventCardIcon}>{event.icon ?? getEventIconByType(event.type)}</ThemedText>
                         </View>
@@ -278,7 +313,7 @@ export default function CalendarScreen() {
                             {event.detail}
                           </ThemedText>
                         </View>
-                      </ThemedView>
+                      </Pressable>
                     ))}
                   </ScrollView>
                 </>
@@ -308,6 +343,16 @@ export default function CalendarScreen() {
           </View>
         </ThemedView>
       </ScrollView>
+
+      {selectedEvent ? (
+        <EventModal
+          event={selectedEvent}
+          onClose={() => setSelectedEvent(null)}
+          userId={userId}
+          userLat={browserCoords?.latitude ?? null}
+          userLon={browserCoords?.longitude ?? null}
+        />
+      ) : null}
     </SafeAreaView>
   );
 }

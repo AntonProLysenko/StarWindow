@@ -60,7 +60,7 @@ async function getCachedLaunches(opts = {}) {
       SELECT
         rl.launch_id, rl.event_id, rl.name, rl.status, rl.net_precision,
         rl.image_url, rl.cached_at,
-        e.start_time AS net, e.date_precision,
+        e.start_time AS net, e.date_precision, e.webcast_live, e.video_url,
         m.name AS mission_name, m.mission_type, m.description AS mission_description,
         r.model AS rocket_model, r.manufacture AS rocket_manufacturer,
         p.name AS provider_name,

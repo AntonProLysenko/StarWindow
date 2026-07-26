@@ -11,6 +11,8 @@
 const database = require("../../config/database");
 const levelingQueries = require("./leveling");
 
+let userEventImagesDeleteUrlColumnReady = false;
+
 module.exports = {
   saveUserEvent,
   deleteUserEvent,
@@ -80,9 +82,11 @@ async function saveUserEvent(userId, eventId) {
  */
 async function deleteUserEvent(userEventId, userId = null) {
   const client = await database.connect();
+  let imgbbDeleteUrls = [];
 
   try {
     await client.query("BEGIN");
+    await ensureUserEventImagesDeleteUrlColumn(client);
 
     const params = userId == null ? [userEventId] : [userEventId, userId];
     const ownershipClause = userId == null ? "" : "AND ue.user_id = $2";
@@ -111,6 +115,7 @@ async function deleteUserEvent(userEventId, userId = null) {
     }
 
     const savedEvent = existing.rows[0];
+    imgbbDeleteUrls = await getUserEventImageDeleteUrls(savedEvent.user_event_id, client);
     const reversals = await reverseSavedEventMechanics(savedEvent, client);
 
     const deleted = await client.query(
@@ -124,7 +129,16 @@ async function deleteUserEvent(userEventId, userId = null) {
     );
 
     await client.query("COMMIT");
-    return { deleted: deleted.rows.length > 0, user_event_id: savedEvent.user_event_id, reversals };
+    const imgbbDeletions = await deleteImagesFromImgbb(imgbbDeleteUrls, {
+      userId: savedEvent.user_id,
+      userEventId: savedEvent.user_event_id,
+    });
+    return {
+      deleted: deleted.rows.length > 0,
+      user_event_id: savedEvent.user_event_id,
+      reversals,
+      imgbb_deletions: imgbbDeletions,
+    };
   } catch (error) {
     await client.query("ROLLBACK");
     throw error;
@@ -140,7 +154,29 @@ async function deleteUserEvent(userEventId, userId = null) {
  */
 async function getUserEvent(userId, eventId) {
   const result = await database.query(
-    "SELECT user_event_id, event_comment, event_rating FROM public.user_events WHERE user_id = $1 AND event_id = $2 LIMIT 1",
+    `
+      SELECT
+        ue.user_event_id,
+        ue.event_comment,
+        ue.event_rating,
+        COALESCE((
+          SELECT json_agg(
+            json_build_object(
+              'user_event_image_id', uei.user_event_image_id,
+              'image_url', uei.image_url,
+              'caption', uei.caption,
+              'created_at', uei.created_at
+            )
+            ORDER BY uei.created_at DESC, uei.user_event_image_id DESC
+          )
+          FROM public.user_event_images uei
+          WHERE uei.user_event_id = ue.user_event_id
+        ), '[]'::json) AS user_event_images
+      FROM public.user_events ue
+      WHERE ue.user_id = $1
+        AND ue.event_id = $2
+      LIMIT 1
+    `,
     [userId, eventId]
   );
   return result.rows[0] || null;
@@ -249,6 +285,7 @@ async function updateUserEventDetails(userId, userEventId, data) {
 
 async function addUserEventImage(userId, userEventId, data) {
   const imageUrl = String(data?.image_url || data?.imageUrl || "").trim();
+  const imgbbDeleteUrl = normalizeImgbbDeleteUrl(data?.imgbb_delete_url || data?.imgbbDeleteUrl);
   const caption = normalizeComment(data?.caption);
 
   if (!imageUrl) {
@@ -261,6 +298,7 @@ async function addUserEventImage(userId, userEventId, data) {
 
   try {
     await client.query("BEGIN");
+    await ensureUserEventImagesDeleteUrlColumn(client);
 
     const savedEvent = await client.query(
       `
@@ -285,11 +323,11 @@ async function addUserEventImage(userId, userEventId, data) {
 
     const inserted = await client.query(
       `
-        INSERT INTO public.user_event_images (user_event_id, image_url, caption)
-        VALUES ($1, $2, $3)
+        INSERT INTO public.user_event_images (user_event_id, image_url, caption, imgbb_delete_url)
+        VALUES ($1, $2, $3, $4)
         RETURNING user_event_image_id, user_event_id, image_url, caption, created_at
       `,
-      [userEventId, imageUrl, caption]
+      [userEventId, imageUrl, caption, imgbbDeleteUrl]
     );
 
     const previousImageCount = Number(savedEvent.rows[0].image_count ?? 0);
@@ -316,14 +354,18 @@ async function addUserEventImage(userId, userEventId, data) {
 
 async function deleteUserEventImage(userId, userEventId, userEventImageId) {
   const client = await database.connect();
+  let shouldReverseImagePoints = false;
+  let imgbbDeleteUrl = null;
 
   try {
     await client.query("BEGIN");
+    await ensureUserEventImagesDeleteUrlColumn(client);
 
     const existing = await client.query(
       `
         SELECT
           uei.user_event_image_id,
+          uei.imgbb_delete_url,
           ue.user_event_id,
           ue.user_id
         FROM public.user_event_images uei
@@ -342,6 +384,8 @@ async function deleteUserEventImage(userId, userEventId, userEventImageId) {
       throw error;
     }
 
+    imgbbDeleteUrl = existing.rows[0].imgbb_delete_url || null;
+
     await client.query(
       "DELETE FROM public.user_event_images WHERE user_event_image_id = $1",
       [userEventImageId]
@@ -352,25 +396,26 @@ async function deleteUserEventImage(userId, userEventId, userEventImageId) {
       [userEventId]
     );
 
-    const progress =
-      Number(remaining.rows[0]?.image_count ?? 0) === 0
-        ? await reverseWithFallback(
-            userId,
-            "add_saved_event_image",
-            "user_event_image",
-            [sourceKeys.image(userEventId), sourceKeys.legacyImage(userEventId)],
-            client
-          )
-        : null;
+    shouldReverseImagePoints = Number(remaining.rows[0]?.image_count ?? 0) === 0;
 
     await client.query("COMMIT");
-    return { deleted: true, user_event_image_id: userEventImageId, progress };
   } catch (error) {
     await client.query("ROLLBACK");
     throw error;
   } finally {
     client.release();
   }
+
+  const progress = shouldReverseImagePoints
+    ? await reverseImagePointsAfterDelete(userId, userEventId, userEventImageId)
+    : null;
+  const imgbbDeleted = await deleteImageFromImgbb(imgbbDeleteUrl, {
+    userId,
+    userEventId,
+    userEventImageId,
+  });
+
+  return { deleted: true, user_event_image_id: userEventImageId, progress, imgbb_deleted: imgbbDeleted };
 }
 
 /**
@@ -507,6 +552,77 @@ function hasMeaningfulComment(value) {
   return String(value || "").trim().length >= 3;
 }
 
+async function ensureUserEventImagesDeleteUrlColumn(client) {
+  if (userEventImagesDeleteUrlColumnReady) return;
+  await client.query(
+    "ALTER TABLE public.user_event_images ADD COLUMN IF NOT EXISTS imgbb_delete_url text"
+  );
+  userEventImagesDeleteUrlColumnReady = true;
+}
+
+function normalizeImgbbDeleteUrl(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+
+  try {
+    const url = new URL(raw);
+    if (url.protocol !== "https:" || url.hostname !== "ibb.co") return null;
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
+async function getUserEventImageDeleteUrls(userEventId, client) {
+  const result = await client.query(
+    `
+      SELECT imgbb_delete_url
+      FROM public.user_event_images
+      WHERE user_event_id = $1
+        AND imgbb_delete_url IS NOT NULL
+    `,
+    [userEventId]
+  );
+
+  return result.rows.map((row) => row.imgbb_delete_url).filter(Boolean);
+}
+
+async function deleteImagesFromImgbb(deleteUrls, context = {}) {
+  const results = await Promise.all(
+    deleteUrls.map((deleteUrl) => deleteImageFromImgbb(deleteUrl, context))
+  );
+
+  return {
+    attempted: deleteUrls.length,
+    deleted: results.filter((result) => result === true).length,
+    skipped: results.filter((result) => result === null).length,
+    failed: results.filter((result) => result === false).length,
+  };
+}
+
+async function deleteImageFromImgbb(deleteUrl, context = {}) {
+  const normalizedDeleteUrl = normalizeImgbbDeleteUrl(deleteUrl);
+  if (!normalizedDeleteUrl) return null;
+
+  try {
+    const response = await fetch(normalizedDeleteUrl, { method: "GET" });
+    if (response.ok) return true;
+
+    console.warn("ImgBB image delete failed:", {
+      ...context,
+      status: response.status,
+      statusText: response.statusText,
+    });
+    return false;
+  } catch (error) {
+    console.warn("ImgBB image delete failed:", {
+      ...context,
+      error: error.message,
+    });
+    return false;
+  }
+}
+
 const sourceKeys = {
   save: (userEventId) => `user_event:${userEventId}:save`,
   comment: (userEventId) => `user_event:${userEventId}:comment`,
@@ -587,4 +703,32 @@ async function reverseWithFallback(userId, actionCode, sourceType, possibleSourc
   }
 
   return lastResult;
+}
+
+async function reverseImagePointsAfterDelete(userId, userEventId, userEventImageId) {
+  const client = await database.connect();
+
+  try {
+    await client.query("BEGIN");
+    const progress = await reverseWithFallback(
+      userId,
+      "add_saved_event_image",
+      "user_event_image",
+      [sourceKeys.image(userEventId), sourceKeys.legacyImage(userEventId)],
+      client
+    );
+    await client.query("COMMIT");
+    return progress;
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => {});
+    console.warn("Saved event image deleted, but image point reversal failed:", {
+      userId,
+      userEventId,
+      userEventImageId,
+      error: error.message,
+    });
+    return null;
+  } finally {
+    client.release();
+  }
 }
