@@ -96,10 +96,14 @@ export function EventModal({
   const canSaveEvent = /^\d+$/.test(String(event.event_id));
   const fallbackIcon = fallbackIconSource(event);
   const { visible, tooFar, distanceMiles } = describeVisibility(event, userLat, userLon);
-  const hasWebcast = Boolean(event.video_url) || event.webcast_live;
+  const videoUrl = event.video_url || null;
+  const infoUrl = event.external_url || null;
+  const hasWebcast = Boolean(videoUrl) || event.webcast_live;
   const visibleBodies = getVisibleBodies(event);
   const hasVisibleBodySlider = visibleBodies.length > 0;
   const isMeteorShower = isMeteorShowerEvent(event);
+  const isSpacewalk = isSpacewalkEvent(event);
+  const suppressViewingScore = isNonViewingScoreEvent(event);
 
   const contentRef = useRef<View>(null);
 
@@ -200,7 +204,8 @@ export function EventModal({
   useEffect(() => {
     setScore(null);
     setScoreInputs(null);
-    if (!visible || userLat == null || userLon == null) return;
+    setScoreLoading(false);
+    if (suppressViewingScore || !visible || userLat == null || userLon == null) return;
 
     const controller = new AbortController();
     setScoreLoading(true);
@@ -217,7 +222,7 @@ export function EventModal({
       })
       .finally(() => setScoreLoading(false));
     return () => controller.abort();
-  }, [event.event_id, visible, userLat, userLon]);
+  }, [event.event_id, suppressViewingScore, visible, userLat, userLon]);
 
   // --- seed saved state ---
   useEffect(() => {
@@ -500,6 +505,8 @@ export function EventModal({
                   <VisibleBodyHero bodies={visibleBodies} />
                 ) : event.image_url ? (
                   <Image source={{ uri: event.image_url }} style={styles.heroImage} resizeMode="cover" />
+                ) : fallbackIcon && isSpacewalk ? (
+                  <Image source={fallbackIcon} style={styles.heroImage} resizeMode="cover" />
                 ) : fallbackIcon ? (
                   <View style={styles.heroFallback}>
                     <Image source={fallbackIcon} style={styles.heroFallbackImage} resizeMode="contain" />
@@ -533,7 +540,7 @@ export function EventModal({
               ) : null}
 
               {/* Viewing score — or, if the event is too far, a 0 + gentle note */}
-              {isMeteorShower ? (
+              {suppressViewingScore ? null : isMeteorShower ? (
                 <MeteorVisibilityPanel
                   event={event}
                   score={score}
@@ -578,18 +585,26 @@ export function EventModal({
                 <LaunchDetailsSection details={event.launch_details} />
               ) : null}
 
-              {/* Webcast */}
-              {hasWebcast ? (
-                event.video_url ? (
-                  <Pressable style={styles.watchBtn} onPress={() => openUrl(event.video_url!)}>
-                    <Text style={styles.watchBtnText}>▶  Watch live</Text>
-                  </Pressable>
-                ) : (
+              {/* Event links */}
+              {videoUrl || infoUrl || hasWebcast ? (
+                <View style={styles.eventLinkActions}>
+                  {videoUrl ? (
+                    <Pressable style={styles.watchBtn} onPress={() => openUrl(videoUrl)}>
+                      <Text style={styles.watchBtnText}>{getVideoLinkText(event)}</Text>
+                    </Pressable>
+                  ) : null}
+                  {infoUrl ? (
+                    <Pressable style={styles.watchBtn} onPress={() => openUrl(infoUrl)}>
+                      <Text style={styles.watchBtnText}>Open event info</Text>
+                    </Pressable>
+                  ) : null}
+                  {!videoUrl && !infoUrl ? (
                   <View style={styles.liveTag}>
                     <View style={styles.liveDot} />
                     <Text style={styles.liveText}>Live coverage expected</Text>
                   </View>
-                )
+                  ) : null}
+                </View>
               ) : null}
 
               {canSaveEvent ? (
@@ -1076,6 +1091,46 @@ function isMeteorShowerEvent(event: EventListItem) {
   return text.includes('meteor') && text.includes('shower');
 }
 
+function isSpacewalkEvent(event: EventListItem) {
+  const type = `${event.type ?? ''}`.toLowerCase();
+  const label = `${event.type ?? ''} ${event.name ?? ''}`.toLowerCase();
+  return label.includes('spacewalk') || type === 'eva';
+}
+
+function isNonViewingScoreEvent(event: EventListItem) {
+  const text = `${event.type ?? ''} ${event.name ?? ''}`.toLowerCase();
+  return (
+    isSpacewalkEvent(event) ||
+    isPressEvent(event) ||
+    text.includes('docking') ||
+    text.includes('undocking') ||
+    text.includes('landing') ||
+    text.includes('farewell') ||
+    text.includes('hatch') ||
+    text.includes('eva')
+  );
+}
+
+function isPressEvent(event: EventListItem) {
+  const text = `${event.type ?? ''} ${event.name ?? ''}`.toLowerCase();
+  return (
+    text.includes('press') ||
+    text.includes('briefing') ||
+    text.includes('media event') ||
+    text.includes('news conference')
+  );
+}
+
+function getVideoLinkText(event: EventListItem) {
+  if (event.video_url) {
+    if (event.webcast_live) return 'Watch live';
+    if (isSpacewalkEvent(event) || isPressEvent(event)) return 'Open recording';
+    return 'Watch recording';
+  }
+
+  return 'Watch recording';
+}
+
 function formatMeteorNumber(value: string | number | null | undefined, digits: number) {
   const number = toFiniteNumber(value);
   return number == null ? null : number.toFixed(digits);
@@ -1451,6 +1506,9 @@ const styles = StyleSheet.create({
     color: Palette.textSecondary,
     fontSize: 13,
     lineHeight: 19,
+  },
+  eventLinkActions: {
+    gap: 10,
   },
   watchBtn: {
     backgroundColor: Palette.accentRed,

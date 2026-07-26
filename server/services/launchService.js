@@ -4,7 +4,7 @@
 const launchQueries = require("../db/queries/launches");
 const { isCacheStale, TTL_MINUTES } = require("../middleware/cache");
 
-const LL2_BASE = "https://lldev.thespacedevs.com/2.3.0";
+const LL2_BASE = "https://ll.thespacedevs.com/2.3.0";
 
 /**
  * Get upcoming rocket launches.
@@ -43,6 +43,7 @@ async function getLaunches({ limit = 5, fromDate, toDate } = {}) {
   // Transform to the frontend shape (same fields as the original route).
   const launches = (data.results || []).map((l) => ({
     name: l.name,
+    url: l.url || null,
     status: l.status?.name,
     net: l.net,
     net_precision: l.net_precision?.name,
@@ -61,6 +62,9 @@ async function getLaunches({ limit = 5, fromDate, toDate } = {}) {
     provider: l.launch_service_provider?.name,
     rocket: l.rocket?.configuration?.name,
     image: l.image?.image_url || null,
+    webcast_live: Boolean(l.webcast_live),
+    video_url: firstUrl(l.vid_urls),
+    info_url: firstUrl(l.info_urls) || firstUpdateInfoUrl(l.updates) || l.url || null,
   }));
 
   console.log("\n=== UPCOMING ROCKET LAUNCHES ===");
@@ -88,8 +92,9 @@ async function getLaunches({ limit = 5, fromDate, toDate } = {}) {
         datePrecision: l.net_precision,
         description: l.mission?.description || null,
         eventType: "Launch", // upserted into event_types
-        webcastLive: null, // LL2 /launches doesn't expose a live flag here
-        videoUrl: null,
+        webcastLive: l.webcast_live,
+        videoUrl: l.video_url,
+        infoUrl: l.info_url,
         imageUrl: l.image,
       };
 
@@ -164,6 +169,7 @@ function mapCachedLaunch(row) {
     longitude: row.pad_long == null ? null : Number(row.pad_long),
     webcast_live: row.webcast_live ?? false,
     video_url: row.video_url || null,
+    external_url: row.info_url || null,
     mission: row.mission_name
       ? {
           name: row.mission_name,
@@ -194,4 +200,20 @@ function mapCachedLaunch(row) {
       status: row.status || row.launch_status || null,
     },
   };
+}
+
+function firstUrl(value) {
+  if (!Array.isArray(value)) return null;
+  for (const item of value) {
+    if (typeof item === "string" && item) return item;
+    if (item?.url) return item.url;
+    if (item?.info_url) return item.info_url;
+  }
+  return null;
+}
+
+function firstUpdateInfoUrl(updates) {
+  if (!Array.isArray(updates)) return null;
+  const update = updates.find((item) => item?.info_url);
+  return update?.info_url || null;
 }

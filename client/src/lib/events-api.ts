@@ -58,6 +58,7 @@ export interface EventListItem {
   longitude: number | null;
   webcast_live: boolean;
   video_url: string | null;
+  external_url?: string | null;
   launch_details: LaunchDetails | null;
   visible_bodies?: VisibleBodyEventItem[];
   radiant?: string | null;

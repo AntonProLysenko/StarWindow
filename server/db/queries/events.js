@@ -2,7 +2,7 @@
 //
 // Tables touched:
 //   events(event_id PK, name, start_time, end_time, date_precision, description,
-//     type_id FK, webcast_live, video_url, image_url)
+//     type_id FK, webcast_live, video_url, info_url, image_url)
 //   event_types(event_type_id PK, event_type)
 //   event_location(event_location_id PK, event_id FK, location_id FK)
 //   event_bodies(event_body_id PK, event_id FK, body_id FK)
@@ -18,6 +18,7 @@ module.exports = {
   getLatestCachedAt,
   getUpcomingNonLaunchEvents,
   getNonLaunchEventsInWindow,
+  getCachedSpacewalkEvents,
   saveEvent,
   findEventByNaturalKey,
   upsertEventType,
@@ -60,7 +61,7 @@ async function getCachedEvents(opts) {
       SELECT
         e.event_id, e.name, e.start_time, e.end_time, e.date_precision,
         e.description, e.type_id, et.event_type, e.webcast_live,
-        e.video_url, e.image_url, e.updated_at
+        e.video_url, e.info_url, e.image_url, e.updated_at
       FROM public.events e
       LEFT JOIN public.event_types et ON et.event_type_id = e.type_id
       ${where.length > 0 ? `WHERE ${where.join(" AND ")}` : ""}
@@ -118,7 +119,7 @@ async function getUpcomingNonLaunchEvents(limit = 200) {
       SELECT * FROM (
         SELECT DISTINCT ON (e.name, e.start_time)
           e.event_id, e.name, e.start_time, e.date_precision, e.description,
-          e.image_url, e.webcast_live, e.video_url, et.event_type,
+          e.image_url, e.webcast_live, e.video_url, e.info_url, et.event_type,
           (
             SELECT loc.name
             FROM public.event_location el
@@ -169,7 +170,7 @@ async function getNonLaunchEventsInWindow({ limit = 200, fromDate, toDate } = {}
       SELECT * FROM (
         SELECT DISTINCT ON (e.name, e.start_time)
           e.event_id, e.name, e.start_time, e.date_precision, e.description,
-          e.image_url, e.webcast_live, e.video_url, et.event_type,
+          e.image_url, e.webcast_live, e.video_url, e.info_url, et.event_type,
           (
             SELECT loc.name
             FROM public.event_location el
@@ -184,6 +185,56 @@ async function getNonLaunchEventsInWindow({ limit = 200, fromDate, toDate } = {}
         ORDER BY e.name, e.start_time, e.event_id
       ) uniq
       ORDER BY uniq.start_time ASC
+      LIMIT $${values.length}
+    `,
+    values
+  );
+  return result.rows;
+}
+
+async function getCachedSpacewalkEvents({ limit = 100, fromDate, toDate, includePast = false } = {}) {
+  const values = [];
+  const sortDirection = includePast && !fromDate ? "DESC" : "ASC";
+  const where = [
+    `NOT EXISTS (
+      SELECT 1 FROM public.rocket_launch rl WHERE rl.event_id = e.event_id
+    )`,
+    `(lower(et.event_type) = 'eva' OR lower(et.event_type) LIKE '%spacewalk%')`,
+  ];
+
+  if (fromDate) {
+    values.push(fromDate);
+    where.push(`e.start_time >= $${values.length}::timestamptz`);
+  } else if (!includePast) {
+    where.push(`e.start_time >= now()`);
+  }
+
+  if (toDate) {
+    values.push(toDate);
+    where.push(`e.start_time <= $${values.length}::timestamptz`);
+  }
+
+  values.push(limit);
+  const result = await database.query(
+    `
+      SELECT * FROM (
+        SELECT DISTINCT ON (e.name, e.start_time)
+          e.event_id, e.name, e.start_time, e.end_time, e.date_precision, e.description,
+          e.image_url, e.webcast_live, e.video_url, e.info_url, et.event_type,
+          (
+            SELECT loc.name
+            FROM public.event_location el
+            JOIN public.locations loc ON loc.location_id = el.location_id
+            WHERE el.event_id = e.event_id
+            ORDER BY el.event_location_id ASC
+            LIMIT 1
+          ) AS location_name
+        FROM public.events e
+        LEFT JOIN public.event_types et ON et.event_type_id = e.type_id
+        WHERE ${where.join(" AND ")}
+        ORDER BY e.name, e.start_time, e.event_id
+      ) uniq
+      ORDER BY uniq.start_time ${sortDirection}
       LIMIT $${values.length}
     `,
     values
@@ -219,6 +270,7 @@ async function findEventByNameAndTime(name, startTime) {
  * @param {string} [data.eventType] - type name; upserted into event_types.
  * @param {boolean} [data.webcastLive]
  * @param {string} [data.videoUrl]
+ * @param {string} [data.infoUrl]
  * @param {string} [data.imageUrl]
  * @param {number} [data.locationId] - if set, linked via event_location.
  * @param {number[]} [data.bodyIds] - if set, each linked via event_bodies.
@@ -279,7 +331,7 @@ async function findEventByNaturalKey({ name, startTime, typeId }, client) {
   const result = await db.query(
     `
       SELECT event_id, name, start_time, end_time, date_precision, description,
-             type_id, webcast_live, video_url, image_url, updated_at
+             type_id, webcast_live, video_url, info_url, image_url, updated_at
       FROM public.events
       WHERE lower(name) = lower($1)
         AND start_time = $2::timestamptz
@@ -304,11 +356,12 @@ async function updateEvent(eventId, data, typeId, client) {
           type_id = $7,
           webcast_live = $8,
           video_url = $9,
-          image_url = $10,
+          info_url = $10,
+          image_url = $11,
           updated_at = now()
       WHERE event_id = $1
       RETURNING event_id, name, start_time, end_time, date_precision, description,
-                type_id, webcast_live, video_url, image_url, updated_at
+                type_id, webcast_live, video_url, info_url, image_url, updated_at
     `,
     [
       eventId,
@@ -320,6 +373,7 @@ async function updateEvent(eventId, data, typeId, client) {
       typeId || null,
       data.webcastLive ?? false,
       data.videoUrl || null,
+      data.infoUrl || null,
       data.imageUrl || null,
     ]
   );
@@ -351,10 +405,10 @@ async function insertEvent(data, client) {
     `
       INSERT INTO public.events
         (name, start_time, end_time, date_precision, description, type_id,
-         webcast_live, video_url, image_url)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+         webcast_live, video_url, info_url, image_url)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
       RETURNING event_id, name, start_time, end_time, date_precision, description,
-                type_id, webcast_live, video_url, image_url, updated_at
+                type_id, webcast_live, video_url, info_url, image_url, updated_at
     `,
     [
       data.name,
@@ -365,6 +419,7 @@ async function insertEvent(data, client) {
       data.typeId || null,
       data.webcastLive ?? false, // events.webcast_live is NOT NULL DEFAULT false
       data.videoUrl || null,
+      data.infoUrl || null,
       data.imageUrl || null,
     ]
   );

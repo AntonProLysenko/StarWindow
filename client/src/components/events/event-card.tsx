@@ -72,6 +72,7 @@ export function EventCard({
   const description = truncate(event.description);
   const savedNote = getSavedEventNote(event);
   const fallbackIcon = fallbackIconSource(event);
+  const isSpacewalk = isSpacewalkEvent(event);
 
   return (
     <Pressable
@@ -84,6 +85,8 @@ export function EventCard({
       <View style={styles.thumb}>
         {event.image_url ? (
           <Image source={{ uri: event.image_url }} style={styles.thumbImage} resizeMode="cover" />
+        ) : fallbackIcon && isSpacewalk ? (
+          <Image source={fallbackIcon} style={styles.thumbImage} resizeMode="cover" />
         ) : fallbackIcon ? (
           <View style={styles.thumbFallback}>
             <Image source={fallbackIcon} style={styles.thumbFallbackImage} resizeMode="contain" />
@@ -139,6 +142,12 @@ function getSavedEventNote(event: EventListItem) {
   if (!('event_comment' in event)) return '';
   const note = event.event_comment;
   return typeof note === 'string' ? note.trim() : '';
+}
+
+function isSpacewalkEvent(event: EventListItem) {
+  const type = `${event.type ?? ''}`.toLowerCase();
+  const label = `${event.type ?? ''} ${event.name ?? ''}`.toLowerCase();
+  return label.includes('spacewalk') || type === 'eva';
 }
 
 const styles = StyleSheet.create({

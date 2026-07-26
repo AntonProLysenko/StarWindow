@@ -35,6 +35,20 @@ const FILTER_OPTIONS = [
   'Spacecraft Event',
   'Spacewalk',
 ];
+const PRIMARY_FILTERS = new Set(FILTER_OPTIONS);
+const CELESTIAL_TYPE_KEYWORDS = [
+  'eclipse',
+  'occultation',
+  'conjunction',
+  'opposition',
+  'transit',
+  'alignment',
+  'lunar',
+  'solar',
+  'moon',
+  'comet',
+  'asteroid',
+];
 
 type EventRouteParams = {
   eventId?: string | string[];
@@ -64,17 +78,31 @@ function eventMatchesFilter(event: EventListItem, filter: string) {
   if (filter === 'Rocket Launch') return event.category === 'launch' || type.includes('launch');
   if (filter === 'Meteor Shower') return type.includes('meteor');
   if (filter === 'Spacecraft Event') return type.includes('spacecraft');
-  if (filter === 'Spacewalk') return type.includes('spacewalk');
+  if (filter === 'Spacewalk') return type.includes('spacewalk') || type === 'eva';
   if (filter === 'Celestial Events') {
     return (
       event.category !== 'launch' &&
       !type.includes('meteor') &&
       !type.includes('spacecraft') &&
-      !type.includes('spacewalk')
+      !type.includes('spacewalk') &&
+      type !== 'eva' &&
+      (type === 'celestial event' || CELESTIAL_TYPE_KEYWORDS.some((keyword) => type.includes(keyword)))
     );
   }
 
   return event.type === filter;
+}
+
+function isPrimaryFilterType(event: EventListItem) {
+  const type = normalizeParam(event.type);
+  return (
+    event.category === 'launch' ||
+    type.includes('launch') ||
+    type.includes('meteor') ||
+    type.includes('spacewalk') ||
+    type === 'eva' ||
+    type === 'spacecraft event'
+  );
 }
 
 function getEventRouteKey(params: EventRouteParams) {
@@ -223,6 +251,20 @@ export default function EventsScreen() {
   // Filter options are derived from the types actually present in the data,
   // with "All" always first. Order preserves first-seen (already chronological).
   // Client-side filtering only — no re-fetch. Data is already sorted soonest-first.
+  const filterOptions = useMemo(() => {
+    const extraTypes: string[] = [];
+    const seen = new Set(PRIMARY_FILTERS);
+
+    for (const event of events) {
+      if (!event.type || seen.has(event.type)) continue;
+      if (isPrimaryFilterType(event)) continue;
+      seen.add(event.type);
+      extraTypes.push(event.type);
+    }
+
+    return [...FILTER_OPTIONS, ...extraTypes];
+  }, [events]);
+
   const visibleEvents = useMemo(() => {
     if (activeType === ALL) return events;
     return events.filter((event) => eventMatchesFilter(event, activeType));
@@ -289,7 +331,7 @@ export default function EventsScreen() {
           showsHorizontalScrollIndicator={false}
           style={styles.filterBar}
           contentContainerStyle={styles.filterBarContent}>
-          {FILTER_OPTIONS.map((option) => {
+          {filterOptions.map((option) => {
             const active = option === activeType;
             return (
               <Pressable

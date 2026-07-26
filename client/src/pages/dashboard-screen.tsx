@@ -419,8 +419,14 @@ function formatMeteorMeta(shower: UpcomingMeteorShower | null, hasLocation: bool
 }
 
 function joinDashboardMeta(parts: (string | null | undefined)[]) {
-  return parts
-    .filter((part): part is string => Boolean(part))
+  return keepPipeGroupsTogether(parts.filter((part): part is string => Boolean(part)).join(' | '));
+}
+
+function keepPipeGroupsTogether(value: string) {
+  if (!value.includes('|')) return value;
+  return value
+    .split(/\s*\|\s*/)
+    .filter(Boolean)
     .map((part) => part.replace(/\s+/g, '\u00A0'))
     .join('\u00A0|\u00A0');
 }
@@ -1030,11 +1036,11 @@ export default function DashboardScreen({ locked = false }: DashboardScreenProps
               </View>
 
               <Text style={styles.heroMetaText}>
-                {isIssLoading
+                {keepPipeGroupsTogether(isIssLoading
                   ? 'Checking visible passes for your location.'
                   : issError
                   ? issError
-                  : formatIssMeta(nextIssPass)}
+                  : formatIssMeta(nextIssPass))}
               </Text>
             </View>
 
@@ -1425,7 +1431,7 @@ function PreviewCard({
           </View>
         </View>
         <Text style={[styles.previewTitle, locked && styles.lockedPreviewText]} numberOfLines={2}>{title}</Text>
-        <Text style={[styles.previewMeta, locked && styles.lockedPreviewText]} numberOfLines={3}>{meta}</Text>
+        <Text style={[styles.previewMeta, locked && styles.lockedPreviewText]} numberOfLines={3}>{keepPipeGroupsTogether(meta)}</Text>
       </View>
     </Pressable>
   );
@@ -1833,11 +1839,14 @@ function SpacewalkThumb({
   isLoading: boolean;
 }) {
   const crewCount = spacewalk?.crew?.length ?? 0;
+  const imageSource = spacewalk?.image_url
+    ? { uri: spacewalk.image_url }
+    : require('@/assets/images/spacewalk-astronaut.png');
 
   return (
     <View style={styles.spacewalkThumb}>
       <Image
-        source={require('@/assets/images/spacewalk-astronaut.png')}
+        source={imageSource}
         style={styles.spacewalkImage}
         resizeMode="cover"
       />

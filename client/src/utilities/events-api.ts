@@ -69,6 +69,8 @@ type RawSpacewalk = {
   duration?: string | number | null;
   location?: string | null;
   space_station?: string | null;
+  description?: string | null;
+  image_url?: string | null;
   schedule_status?: 'upcoming' | 'latest';
   crew?: {
     name?: string;
@@ -319,6 +321,7 @@ function toSpacewalkCalendarEvent(spacewalk: RawSpacewalk, index: number): Calen
     icon: getEventIcon('Spacewalk'),
     type: 'Spacewalk',
     location: spacewalk.location ?? spacewalk.space_station ?? null,
+    imageUrl: spacewalk.image_url ?? null,
   };
 }
 
@@ -558,7 +561,7 @@ export async function fetchNextUpcomingSpacewalk(now = new Date()): Promise<Upco
   });
   const spacewalksData = await sendRequest<null, SpacewalksResponse>(`${EVENTS_URL}/spacewalks?${spacewalksParams}`);
 
-  const nextSpacewalk = (spacewalksData.results ?? [])
+  const nextSpacewalk = (spacewalksData?.results ?? [])
     .filter((spacewalk) => spacewalk.start && new Date(spacewalk.start).getTime() >= now.getTime())
     .sort((a, b) => new Date(a.start ?? 0).getTime() - new Date(b.start ?? 0).getTime())[0];
 
@@ -568,9 +571,11 @@ export async function fetchNextUpcomingSpacewalk(now = new Date()): Promise<Upco
     limit: '1',
   });
   const latestSpacewalksData = await sendRequest<null, SpacewalksResponse>(`${EVENTS_URL}/spacewalks?${latestParams}`);
-  const latestSpacewalk = latestSpacewalksData.results?.[0] ?? null;
+  const latestSpacewalk = latestSpacewalksData?.results?.[0] ?? null;
 
-  return latestSpacewalk ? { ...latestSpacewalk, schedule_status: 'latest' } : null;
+  if (latestSpacewalk) return { ...latestSpacewalk, schedule_status: 'latest' };
+
+  return null;
 }
 
 export async function fetchNextUpcomingMeteorShower(
