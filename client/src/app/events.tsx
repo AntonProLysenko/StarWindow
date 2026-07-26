@@ -21,8 +21,8 @@ import { EventModal } from '@/components/events/event-modal';
 import { Palette, Radius } from '@/constants/tokens';
 import { useSharedEvents } from '@/context/events-context';
 import { getEventEmoji } from '@/lib/event-colors';
+import { fetchEventsList, type EventListItem } from '@/lib/events-api';
 import { ALL_EVENT_FILTER, EVENT_FILTER_OPTIONS, filterEvents } from '@/lib/event-icons';
-import type { EventListItem } from '@/lib/events-api';
 import { getOrRequestUserLocation } from '@/utilities/user-location-service';
 import { getUser } from '@/utilities/users-service';
 import { dvw } from '@/utilities/responsive-dimensions';
@@ -119,19 +119,7 @@ function getFilterLabel(option: string) {
 }
 
 function eventMatchesFilter(event: EventListItem, filter: string) {
-  const canonicalFilter = getCanonicalFilterOption(filter);
-  if (canonicalFilter === ALL) return true;
-
-  const bucket = getEventFilterBucket(event);
-  if (canonicalFilter === 'Near-Earth Object') {
-    return bucket === 'Near-Earth Object' || bucket === 'Asteroid Flyby' || bucket === 'Comet Flyby';
-  }
-
-  if (PRIMARY_FILTERS.has(canonicalFilter)) {
-    return bucket === canonicalFilter;
-  }
-
-  return getCanonicalFilterOption(event.type) === canonicalFilter;
+  return filterEvents([event], filter).length > 0;
 }
 
 function isPrimaryFilterType(event: EventListItem) {
@@ -360,10 +348,7 @@ export default function EventsScreen() {
     }
   }, [activeType, filterOptions]);
 
-  const visibleEvents = useMemo(() => {
-    if (activeType === ALL_EVENT_FILTER) return events;
-    return events.filter((event) => eventMatchesFilter(event, activeType));
-  }, [events, activeType]);
+  const visibleEvents = useMemo(() => filterEvents(events, activeType), [events, activeType]);
 
   const { pastEvents, upcomingEvents } = useMemo(() => {
     const now = Date.now();
@@ -434,7 +419,13 @@ export default function EventsScreen() {
                 onPress={() => setActiveType(option)}
                 style={[styles.filterPill, active && styles.filterPillActive]}>
                 <Text style={[styles.filterPillText, active && styles.filterPillTextActive]}>
-                  {getFilterLabel(option)}
+                  {option === ALL_EVENT_FILTER 
+                    ? `✦ ${option}` 
+                    : `${getEventEmoji({
+                        category: option === 'Rocket Launch' ? 'launch' : 'event',
+                        type: option,
+                        name: option,
+                      })} ${option}`}
                 </Text>
               </Pressable>
             );

@@ -1,5 +1,10 @@
 export type EventIconType = 'meteor' | 'launch' | 'moon' | 'iss' | 'spacewalk' | 'eclipse' | 'spacecraft' | 'other';
 
+export function getEventIconByType(type?: string): string {
+  const key = (type ?? 'other') as EventIconType;
+  return ICON_MAP[key] ?? ICON_MAP.other;
+}
+
 export const ALL_EVENT_FILTER = 'All';
 
 export const EVENT_FILTER_OPTIONS = [
@@ -31,10 +36,6 @@ const ICON_MAP: Record<EventIconType, string> = {
 
 function normalizeEventFilterValue(value?: string | null) {
   return (value ?? '').trim().toLowerCase().replace(/\s+/g, ' ');
-}
-
-function normalizeEventTypeValue(value?: string | null) {
-  return (value ?? '').trim().toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 }
 
 export function matchesEventFilter(event: EventFilterable, filter: string) {
@@ -72,30 +73,4 @@ export function matchesEventFilter(event: EventFilterable, filter: string) {
 
 export function filterEvents<T extends EventFilterable>(events: T[], filter: string): T[] {
   return events.filter((event) => matchesEventFilter(event, filter));
-}
-
-export function getEventIconByType(type?: string): string {
-  const normalized = normalizeEventTypeValue(type);
-
-  if (!normalized) return ICON_MAP.other;
-  if (normalized.includes('meteor')) return ICON_MAP.meteor;
-  if (normalized.includes('launch')) return ICON_MAP.launch;
-  if (normalized.includes('eclipse')) return ICON_MAP.eclipse;
-  if (normalized.includes('spacewalk')) return ICON_MAP.spacewalk;
-  if (normalized.includes('iss') || normalized.includes('space station')) return ICON_MAP.iss;
-  if (normalized.includes('moon')) return ICON_MAP.moon;
-  if (
-    normalized.includes('spacecraft') ||
-    normalized.includes('docking') ||
-    normalized.includes('berthing') ||
-    normalized.includes('flyby') ||
-    normalized.includes('orbit insertion') ||
-    normalized.includes('maneuver') ||
-    normalized.includes('rendezvous') ||
-    normalized.includes('deploy')
-  ) {
-    return ICON_MAP.spacecraft;
-  }
-
-  return ICON_MAP.other;
 }

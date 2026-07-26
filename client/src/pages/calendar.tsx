@@ -9,7 +9,9 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Palette, Radius, Spacing } from '@/constants/tokens';
 import { useSharedEvents } from '@/context/events-context';
+import { useCalendarEvents } from '@/hooks/use-calendar-events';
 import { ALL_EVENT_FILTER, EVENT_FILTER_OPTIONS, filterEvents, getEventIconByType } from '@/lib/event-icons';
+import { getEventEmoji } from '@/lib/event-colors';
 import type { EventListItem } from '@/lib/events-api';
 import {
   eventListItemToCalendarEvent,
@@ -22,6 +24,8 @@ import { getUser } from '@/utilities/users-service';
 import { dvw, dvh } from '@/utilities/responsive-dimensions';
 
 const categories = EVENT_FILTER_OPTIONS;
+const MONTHS_BEHIND_TO_FETCH = 1;
+const MONTHS_AHEAD_TO_FETCH = 1;
 const CALENDAR_GRID_MAX_HEIGHT = 840;
 const STARS = Array.from({ length: 72 }, (_, i) => ({
   top: (i * 23.7) % 100,
@@ -67,6 +71,33 @@ function calendarEventToEventListItem(event: CalendarEvent): EventListItem {
   };
 }
 
+function formatDateForApi(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function defaultCalendarWindow() {
+  const today = new Date();
+  const from = new Date(today.getFullYear(), today.getMonth(), 1);
+  const to = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+  return { fromDate: formatDateForApi(from), toDate: formatDateForApi(to) };
+}
+
+function getCalendarFetchWindow(year: number, month: number) {
+  const from = new Date(year, month - MONTHS_BEHIND_TO_FETCH, 1);
+  const to = new Date(year, month + MONTHS_AHEAD_TO_FETCH + 1, 0);
+
+  const fromStr = formatDateForApi(from);
+  const toStr = formatDateForApi(to);
+
+  return {
+    fromDate: fromStr,
+    toDate: toStr,
+  };
+}
+
 const CalendarBackdrop = memo(function CalendarBackdrop() {
   return (
     <>
@@ -101,12 +132,39 @@ export default function CalendarScreen() {
   const [selectedDate, setSelectedDate] = useState(new Date(today.getFullYear(), today.getMonth(), today.getDate()));
   const [currentMonth, setCurrentMonth] = useState(today.getMonth());
   const [currentYear, setCurrentYear] = useState(today.getFullYear());
+  const [loadedWindow, setLoadedWindow] = useState(() =>
+    getCalendarFetchWindow(today.getFullYear(), today.getMonth())
+  );
   const [browserCoords, setBrowserCoords] = useState<{ latitude: number; longitude: number } | null>(null);
   const [locationNotice, setLocationNotice] = useState('Requesting browser location for visible sky events.');
   const [selectedEvent, setSelectedEvent] = useState<EventListItem | null>(null);
   const [activeFilter, setActiveFilter] = useState(ALL_EVENT_FILTER);
   const userId = getUser()?.user_id ?? null;
-  const { events: sharedEvents, isLoading, error } = useSharedEvents();
+
+  const calendarQuery = useMemo(() => {
+    return {
+      fromDate: loadedWindow.fromDate,
+      toDate: loadedWindow.toDate,
+      includeVisibleBodies: true,
+      ...(browserCoords ?? {}),
+    };
+  }, [browserCoords, loadedWindow.fromDate, loadedWindow.toDate]);
+
+  const { events, isLoading, error } = useCalendarEvents(calendarQuery);
+
+  const filterOptions = useMemo(() => {
+    const extraTypes: string[] = [];
+    const seen = new Set<string>(EVENT_FILTER_OPTIONS);
+
+    for (const event of events) {
+      const type = event.type ?? 'Event';
+      if (seen.has(type)) continue;
+      seen.add(type);
+      extraTypes.push(type);
+    }
+
+    return [...EVENT_FILTER_OPTIONS, ...extraTypes];
+  }, [events]);
 
   useEffect(() => {
     let cancelled = false;
@@ -139,14 +197,8 @@ export default function CalendarScreen() {
     };
   }, []);
 
-  const events = useMemo(
-    () => sharedEvents
-      .map((event, index) => eventListItemToCalendarEvent(event, index))
-      .filter((event): event is CalendarEvent => event !== null),
-    [sharedEvents]
-  );
-
   const filteredEvents = useMemo(() => filterEvents(events, activeFilter), [events, activeFilter]);
+
   const selectedDayEvents = useMemo(
     () => getCalendarEventsForDate(filteredEvents, selectedDate),
     [filteredEvents, selectedDate]
@@ -192,15 +244,25 @@ export default function CalendarScreen() {
 
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollViewContent}>
         <View style={styles.filterButtonsContainer}>
-          {categories.map((category) => {
+          {filterOptions.map((category) => {
             const active = category === activeFilter;
             return (
               <Pressable
                 key={category}
                 onPress={() => setActiveFilter(category)}
-                style={({ pressed }) => [styles.categoryPill, active && styles.categoryPillActive, pressed && styles.pressed]}>
-                <ThemedText type="small" style={[styles.categoryText, active && styles.categoryTextActive]}>
-                  {category}
+                  style={({ pressed }) => [
+                    styles.categoryPill, 
+                    active && styles.categoryPillActive, 
+                    pressed && styles.pressed
+                  ]}>
+                  <ThemedText type="small" style={[styles.categoryText, active && styles.categoryTextActive]}>
+                    {category === ALL_EVENT_FILTER 
+                      ? `✦ ${category}` 
+                      : `${getEventEmoji({
+                          category: category === 'Rocket Launch' ? 'launch' : 'event',
+                          type: category,
+                          name: category,
+                        })} ${category}`}
                 </ThemedText>
               </Pressable>
             );
@@ -356,24 +418,24 @@ const styles = StyleSheet.create({
     marginTop: Spacing.md,
   },
   categoryPill: {
-    backgroundColor: Palette.bgDeep,
+    paddingVertical: 7,
+    paddingHorizontal: 14,
+    borderRadius: Radius.pill,
     borderWidth: 1,
     borderColor: Palette.borderSoft,
-    paddingVertical: Spacing.sm,
-    paddingHorizontal: Spacing.md,
-    borderRadius: Radius.pill,
+    backgroundColor: Palette.surface,
   },
   categoryPillActive: {
-    backgroundColor: Palette.accent,
+    backgroundColor: Palette.accent + '20',
     borderColor: Palette.accent,
   },
   categoryText: {
-    color: Palette.accent,
-    fontWeight: '700',
-    letterSpacing: 0.4,
+    fontSize: 12,
+    fontWeight: '600',
+    color: Palette.textSecondary,
   },
   categoryTextActive: {
-    color: Palette.textPrimary,
+    color: Palette.accent,
   },
   calendarContainer: {
     marginTop: Spacing.xs,
