@@ -8,10 +8,11 @@ import { ShootingStar } from '@/components/shooting-star';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Palette, Radius, Spacing } from '@/constants/tokens';
-import { useCalendarEvents } from '@/hooks/use-calendar-events';
+import { useSharedEvents } from '@/context/events-context';
 import { getEventIconByType } from '@/lib/event-icons';
 import type { EventListItem } from '@/lib/events-api';
 import {
+  eventListItemToCalendarEvent,
   getCalendarEventsForDate,
   getCalendarEventsForMonth,
   type CalendarEvent,
@@ -21,8 +22,6 @@ import { getUser } from '@/utilities/users-service';
 import { dvw, dvh } from '@/utilities/responsive-dimensions';
 
 const categories = ['Meteor Showers', 'Rocket Launches', 'Alignments', 'More Filters'];
-const MONTHS_BEHIND_TO_FETCH = 1;
-const MONTHS_AHEAD_TO_FETCH = 1;
 const CALENDAR_GRID_MAX_HEIGHT = 840;
 const STARS = Array.from({ length: 72 }, (_, i) => ({
   top: (i * 23.7) % 100,
@@ -68,39 +67,6 @@ function calendarEventToEventListItem(event: CalendarEvent): EventListItem {
   };
 }
 
-function formatDateForApi(date: Date) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
-
-function getMonthIndex(year: number, month: number) {
-  return year * 12 + month;
-}
-
-function getCalendarFetchWindow(year: number, month: number) {
-  const from = new Date(year, month - MONTHS_BEHIND_TO_FETCH, 1);
-  const to = new Date(year, month + MONTHS_AHEAD_TO_FETCH + 1, 0);
-
-  return getCalendarFetchWindowFromIndexes(
-    getMonthIndex(from.getFullYear(), from.getMonth()),
-    getMonthIndex(to.getFullYear(), to.getMonth())
-  );
-}
-
-function getCalendarFetchWindowFromIndexes(startMonthIndex: number, endMonthIndex: number) {
-  const from = new Date(Math.floor(startMonthIndex / 12), startMonthIndex % 12, 1);
-  const to = new Date(Math.floor(endMonthIndex / 12), (endMonthIndex % 12) + 1, 0);
-
-  return {
-    fromDate: formatDateForApi(from),
-    toDate: formatDateForApi(to),
-    startMonthIndex,
-    endMonthIndex,
-  };
-}
-
 const CalendarBackdrop = memo(function CalendarBackdrop() {
   return (
     <>
@@ -135,13 +101,11 @@ export default function CalendarScreen() {
   const [selectedDate, setSelectedDate] = useState(new Date(today.getFullYear(), today.getMonth(), today.getDate()));
   const [currentMonth, setCurrentMonth] = useState(today.getMonth());
   const [currentYear, setCurrentYear] = useState(today.getFullYear());
-  const [loadedWindow, setLoadedWindow] = useState(() =>
-    getCalendarFetchWindow(today.getFullYear(), today.getMonth())
-  );
   const [browserCoords, setBrowserCoords] = useState<{ latitude: number; longitude: number } | null>(null);
-  const [locationNotice, setLocationNotice] = useState('Requesting browser location for visible sky events.');
+  const [locationNotice, setLocationNotice] = useState('Requesting browser location for event viewing details.');
   const [selectedEvent, setSelectedEvent] = useState<EventListItem | null>(null);
   const userId = getUser()?.user_id ?? null;
+  const { events: sharedEvents, isLoading, error } = useSharedEvents();
 
   useEffect(() => {
     let cancelled = false;
@@ -152,20 +116,20 @@ export default function CalendarScreen() {
         if (cancelled) return;
         if (!location) {
           setBrowserCoords(null);
-          setLocationNotice('Location is required for visible sky events. Enable location in browser site settings and reload.');
+          setLocationNotice('Enable location to see event viewing details for your area.');
           return;
         }
 
         setBrowserCoords(location);
         setLocationNotice(
           location.source === 'ip'
-            ? 'Visible sky events use your approximate IP-based location.'
-            : 'Visible sky events use your current browser location.'
+            ? 'Event viewing details use your approximate IP-based location.'
+            : 'Event viewing details use your current browser location.'
         );
       } catch {
         if (cancelled) return;
         setBrowserCoords(null);
-        setLocationNotice("Couldn't get your location. Check browser and system location settings, then reload.");
+        setLocationNotice("Couldn't get your location. Event list still works, but viewing details may be limited.");
       }
     })();
 
@@ -174,15 +138,12 @@ export default function CalendarScreen() {
     };
   }, []);
 
-  const calendarQuery = useMemo(() => {
-    return {
-      fromDate: loadedWindow.fromDate,
-      toDate: loadedWindow.toDate,
-      includeVisibleBodies: true,
-      ...(browserCoords ?? {}),
-    };
-  }, [browserCoords, loadedWindow.fromDate, loadedWindow.toDate]);
-  const { events, isLoading, error } = useCalendarEvents(calendarQuery);
+  const events = useMemo(
+    () => sharedEvents
+      .map((event, index) => eventListItemToCalendarEvent(event, index))
+      .filter((event): event is CalendarEvent => event !== null),
+    [sharedEvents]
+  );
 
   const selectedDayEvents = useMemo(
     () => getCalendarEventsForDate(events, selectedDate),
@@ -203,21 +164,8 @@ export default function CalendarScreen() {
   );
 
   function setDisplayedMonth(year: number, month: number) {
-    const monthIndex = getMonthIndex(year, month);
-
     setCurrentYear(year);
     setCurrentMonth(month);
-    setLoadedWindow((currentWindow) => {
-      if (monthIndex <= currentWindow.startMonthIndex) {
-        return getCalendarFetchWindowFromIndexes(currentWindow.startMonthIndex - 1, currentWindow.endMonthIndex);
-      }
-
-      if (monthIndex >= currentWindow.endMonthIndex) {
-        return getCalendarFetchWindowFromIndexes(currentWindow.startMonthIndex, currentWindow.endMonthIndex + 1);
-      }
-
-      return currentWindow;
-    });
   }
 
   function handlePreviousMonth() {

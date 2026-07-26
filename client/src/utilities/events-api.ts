@@ -188,7 +188,7 @@ function getEventIcon(type?: string) {
   if (normalized.includes('meteor')) return 'M';
   if (normalized.includes('launch')) return 'L';
   if (normalized.includes('eclipse')) return 'E';
-  if (normalized.includes('spacewalk')) return 'S';
+  if (normalized.includes('spacewalk') || normalized === 'eva') return 'S';
   if (normalized.includes('iss')) return 'I';
   if (normalized.includes('visible body')) return 'B';
   if (normalized.includes('moon')) return 'M';
@@ -240,7 +240,7 @@ function toCalendarEvent(event: RawEvent, index: number): CalendarEvent | null {
     date: start.getDate(),
     startDate: start.toISOString(),
     title: event.name ?? 'Space event',
-    time: formatEventTime(start, event.date_precision),
+    time: formatEventTime(start, event.date_precision ?? undefined),
     detail: event.description ?? event.location ?? 'No event details available.',
     icon: getEventIcon(event.type),
     type: event.type,
@@ -252,6 +252,79 @@ function toCalendarEvent(event: RawEvent, index: number): CalendarEvent | null {
     externalUrls: normalizeUrlList(event.external_urls, event.external_url),
     location: event.location,
     imageUrl: event.image_url,
+    radiant: event.radiant ?? null,
+    radiantDeclinationDegrees: event.radiant_declination_degrees ?? null,
+    zhr: event.zhr ?? null,
+    activeStart: event.active_start ?? null,
+    activeEnd: event.active_end ?? null,
+    peakDate: event.peak_date ?? null,
+    bestTime: event.best_time ?? null,
+    moonAgeDays: event.moon_age_days ?? null,
+    radiantMaxAltitudeDegrees: event.radiant_max_altitude_degrees ?? null,
+  };
+}
+
+type EventListCalendarInput = {
+  id?: number | string;
+  event_id?: number | string;
+  category?: 'event' | 'launch';
+  name?: string;
+  type?: string;
+  date?: string | null;
+  date_precision?: string | null;
+  location?: string | null;
+  description?: string | null;
+  webcast_live?: boolean;
+  video_urls?: string[];
+  video_url?: string | null;
+  external_url?: string | null;
+  external_urls?: string[];
+  image_url?: string | null;
+  radiant?: string | null;
+  radiant_declination_degrees?: number | string | null;
+  zhr?: number | string | null;
+  active_start?: string | null;
+  active_end?: string | null;
+  peak_date?: string | null;
+  best_time?: string | null;
+  moon_age_days?: number | string | null;
+  radiant_max_altitude_degrees?: number | string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  launch_details?: CalendarEvent['launchDetails'];
+  visible_bodies?: VisibleBodyCalendarItem[];
+};
+
+export function eventListItemToCalendarEvent(event: EventListCalendarInput, index = 0): CalendarEvent | null {
+  if (!event.date) return null;
+
+  const start = parseApiDate(event.date);
+  if (Number.isNaN(start.getTime())) return null;
+
+  return {
+    id: String(event.id ?? `${event.name ?? 'event'}-${event.date}-${index}`),
+    sourceId: event.id,
+    eventId: event.event_id ?? event.id ?? null,
+    category: event.category ?? 'event',
+    date: start.getDate(),
+    startDate: start.toISOString(),
+    title: event.name ?? 'Space event',
+    time: formatEventTime(start, event.date_precision ?? undefined),
+    detail: event.description ?? event.location ?? 'No event details available.',
+    icon: getEventIcon(event.type),
+    type: event.type,
+    datePrecision: event.date_precision ?? null,
+    webcastLive: event.webcast_live ?? false,
+    videoUrl: event.video_url ?? event.video_urls?.[0] ?? null,
+    videoUrls: normalizeUrlList(event.video_urls, event.video_url),
+    externalUrl: event.external_url ?? null,
+    externalUrls: normalizeUrlList(event.external_urls, event.external_url),
+    latitude: event.latitude ?? null,
+    longitude: event.longitude ?? null,
+    launchDetails: event.launch_details ?? null,
+    location: event.location,
+    imageUrl: event.image_url,
+    visibleBodies: event.visible_bodies,
     radiant: event.radiant ?? null,
     radiantDeclinationDegrees: event.radiant_declination_degrees ?? null,
     zhr: event.zhr ?? null,

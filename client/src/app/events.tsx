@@ -19,15 +19,14 @@ import { useLocalSearchParams } from 'expo-router';
 import { EventCard } from '@/components/events/event-card';
 import { EventModal } from '@/components/events/event-modal';
 import { Palette, Radius } from '@/constants/tokens';
+import { useSharedEvents } from '@/context/events-context';
 import { getEventEmoji } from '@/lib/event-colors';
-import { fetchEventsList, type EventListItem } from '@/lib/events-api';
+import type { EventListItem } from '@/lib/events-api';
 import { getOrRequestUserLocation } from '@/utilities/user-location-service';
 import { getUser } from '@/utilities/users-service';
 import { dvw } from '@/utilities/responsive-dimensions';
 
 const ALL = 'All';
-const PAST_DAYS_TO_SHOW = 365;
-const FUTURE_DAYS_TO_SHOW = 365;
 const FILTER_OPTIONS = [
   ALL,
   'Rocket Launch',
@@ -318,9 +317,7 @@ function buildDashboardPreviewEvent(params: EventRouteParams): EventListItem | n
 export default function EventsScreen() {
   const routeParams = useLocalSearchParams<EventRouteParams>();
   const routeEventKey = getEventRouteKey(routeParams);
-  const [events, setEvents] = useState<EventListItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { events, isLoading: loading, error } = useSharedEvents();
   const [activeType, setActiveType] = useState<string>(ALL);
   const listRef = useRef<ScrollView>(null);
   const [upcomingAnchorY, setUpcomingAnchorY] = useState<number | null>(null);
@@ -345,31 +342,6 @@ export default function EventsScreen() {
         // Location unavailable — score section shows an "enable location" note.
       }
     })();
-  }, []);
-
-  // Fetch once on mount. AbortController cancels the request if we unmount first.
-  useEffect(() => {
-    const controller = new AbortController();
-    (async () => {
-      try {
-        setLoading(true);
-        setError(null);
-        const data = await fetchEventsList({
-          includePast: true,
-          pastDays: PAST_DAYS_TO_SHOW,
-          futureDays: FUTURE_DAYS_TO_SHOW,
-          signal: controller.signal,
-        });
-        setEvents(data);
-      } catch (err) {
-        if ((err as Error).name !== 'AbortError') {
-          setError('Could not load events. Please try again.');
-        }
-      } finally {
-        setLoading(false);
-      }
-    })();
-    return () => controller.abort();
   }, []);
 
   // Filter options are derived from the types actually present in the data,
