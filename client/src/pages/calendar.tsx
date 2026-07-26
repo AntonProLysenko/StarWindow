@@ -52,6 +52,7 @@ function calendarEventToEventListItem(event: CalendarEvent): EventListItem {
     webcast_live: event.webcastLive ?? false,
     video_url: event.videoUrl ?? null,
     launch_details: event.launchDetails ?? null,
+    visible_bodies: event.visibleBodies ?? undefined,
   };
 }
 

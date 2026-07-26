@@ -36,6 +36,7 @@ import {
   updateSavedUserEvent,
   type EventListItem,
   type SavedUserEventImage,
+  type VisibleBodyEventItem,
 } from '@/lib/events-api';
 import { describeVisibility } from '@/lib/event-visibility';
 import { dvw, dvh } from '@/utilities/responsive-dimensions';
@@ -95,6 +96,8 @@ export function EventModal({
   const fallbackIcon = fallbackIconSource(event);
   const { visible, tooFar, distanceMiles } = describeVisibility(event, userLat, userLon);
   const hasWebcast = Boolean(event.video_url) || event.webcast_live;
+  const visibleBodies = getVisibleBodies(event);
+  const hasVisibleBodySlider = visibleBodies.length > 0;
 
   const contentRef = useRef<View>(null);
 
@@ -483,7 +486,9 @@ export function EventModal({
               scrollEnabled={!fullScreenImage}>
               {/* Enlarged image / fallback */}
               <View style={[styles.hero, isLaunch && { borderColor: LAUNCH_ACCENT + '55' }]}>
-                {event.image_url ? (
+                {hasVisibleBodySlider ? (
+                  <VisibleBodyHero bodies={visibleBodies} />
+                ) : event.image_url ? (
                   <Image source={{ uri: event.image_url }} style={styles.heroImage} resizeMode="cover" />
                 ) : fallbackIcon ? (
                   <View style={styles.heroFallback}>
@@ -544,7 +549,9 @@ export function EventModal({
               )}
 
               {/* Full description */}
-              {event.description ? (
+              {hasVisibleBodySlider ? (
+                <VisibleBodyDescription bodies={visibleBodies} />
+              ) : event.description ? (
                 <Text style={styles.description}>{event.description}</Text>
               ) : null}
 
@@ -818,14 +825,156 @@ export function EventModal({
   );
 }
 
+function VisibleBodyHero({ bodies }: { bodies: VisibleBodyEventItem[] }) {
+  const scrollRef = useRef<ScrollView>(null);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [sliderWidth, setSliderWidth] = useState(0);
+  const slideWidth = Math.max(sliderWidth - 20, 0);
+  const canGoPrevious = activeIndex > 0;
+  const canGoNext = activeIndex < bodies.length - 1;
+
+  function scrollToIndex(index: number) {
+    const nextIndex = Math.min(Math.max(index, 0), bodies.length - 1);
+    setActiveIndex(nextIndex);
+    scrollRef.current?.scrollTo({ x: nextIndex * (slideWidth + 10), animated: true });
+  }
+
+  return (
+    <View
+      style={styles.visibleBodyCarousel}
+      onLayout={(event) => setSliderWidth(event.nativeEvent.layout.width)}>
+      <ScrollView
+        ref={scrollRef}
+        horizontal
+        pagingEnabled={slideWidth > 0}
+        snapToInterval={slideWidth > 0 ? slideWidth + 10 : undefined}
+        decelerationRate="fast"
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.visibleBodySliderContent}
+        onMomentumScrollEnd={(event) => {
+          if (slideWidth <= 0) return;
+          const nextIndex = Math.round(event.nativeEvent.contentOffset.x / (slideWidth + 10));
+          setActiveIndex(Math.min(Math.max(nextIndex, 0), bodies.length - 1));
+        }}>
+        {bodies.map((body, index) => {
+          const altitude = formatBodyMetric(body.altitude_degrees, 1);
+          const magnitude = formatBodyMetric(body.magnitude, 1);
+          const meta = [
+            altitude ? `Alt ${altitude} deg` : null,
+            body.constellation,
+            magnitude ? `Mag ${magnitude}` : null,
+          ].filter(Boolean).join(' | ');
+
+          return (
+            <View
+              key={`${body.body}-${index}`}
+              style={[styles.visibleBodySlide, slideWidth > 0 && { width: slideWidth }]}>
+              {body.image_url ? (
+                <Image source={{ uri: body.image_url }} style={styles.visibleBodyImage} resizeMode="contain" />
+              ) : (
+                <View style={styles.visibleBodyFallback}>
+                  <Text style={styles.visibleBodyFallbackText}>{body.body.slice(0, 1).toUpperCase()}</Text>
+                </View>
+              )}
+              <View style={styles.visibleBodyScrim} />
+              <View style={styles.visibleBodyOverlay}>
+                <Text style={styles.visibleBodyName} numberOfLines={1}>{body.body}</Text>
+                {meta ? <Text style={styles.visibleBodyMeta} numberOfLines={2}>{meta}</Text> : null}
+              </View>
+            </View>
+          );
+        })}
+      </ScrollView>
+
+      {bodies.length > 1 ? (
+        <>
+          <Pressable
+            style={[styles.visibleBodyCarouselButton, styles.visibleBodyCarouselButtonLeft, !canGoPrevious && styles.visibleBodyCarouselButtonDisabled]}
+            onPress={() => scrollToIndex(activeIndex - 1)}
+            disabled={!canGoPrevious}
+            aria-label="Previous visible body">
+            <Text style={styles.visibleBodyCarouselButtonText}>‹</Text>
+          </Pressable>
+          <Pressable
+            style={[styles.visibleBodyCarouselButton, styles.visibleBodyCarouselButtonRight, !canGoNext && styles.visibleBodyCarouselButtonDisabled]}
+            onPress={() => scrollToIndex(activeIndex + 1)}
+            disabled={!canGoNext}
+            aria-label="Next visible body">
+            <Text style={styles.visibleBodyCarouselButtonText}>›</Text>
+          </Pressable>
+          <View style={styles.visibleBodyDots}>
+            {bodies.map((body, index) => (
+              <View
+                key={`${body.body}-dot-${index}`}
+                style={[styles.visibleBodyDot, index === activeIndex && styles.visibleBodyDotActive]}
+              />
+            ))}
+          </View>
+        </>
+      ) : null}
+    </View>
+  );
+}
+
+function VisibleBodyDescription({ bodies }: { bodies: VisibleBodyEventItem[] }) {
+  return (
+    <View style={styles.visibleBodyDescriptionList}>
+      {bodies.map((body, index) => (
+        <View key={`${body.body}-description-${index}`} style={styles.visibleBodyDescriptionRow}>
+          <Text style={styles.visibleBodyDescriptionBullet}>{'\u2022'}</Text>
+          <View style={styles.visibleBodyDescriptionTextWrap}>
+            <Text style={styles.visibleBodyDescriptionBody}>{body.body}</Text>
+            <Text style={styles.visibleBodyDescriptionMeta}>{formatVisibleBodyDescription(body)}</Text>
+          </View>
+        </View>
+      ))}
+    </View>
+  );
+}
+
 function getSavedEventNote(event: EventListItem): string {
   return 'event_comment' in event && typeof event.event_comment === 'string'
     ? event.event_comment
     : '';
 }
 
+function getVisibleBodies(event: EventListItem): VisibleBodyEventItem[] {
+  if (!Array.isArray(event.visible_bodies)) return [];
+
+  return [...event.visible_bodies]
+    .filter((body) => body.body)
+    .sort((a, b) => (toFiniteNumber(b.altitude_degrees) ?? -Infinity) - (toFiniteNumber(a.altitude_degrees) ?? -Infinity));
+}
+
 function getSavedEventImages(event: EventListItem): SavedUserEventImage[] {
   return Array.isArray(event.user_event_images) ? event.user_event_images : [];
+}
+
+function toFiniteNumber(value: string | number | null | undefined) {
+  if (value === null || value === undefined) return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+function formatBodyMetric(value: string | number | null | undefined, digits: number) {
+  const number = toFiniteNumber(value);
+  return number == null ? null : number.toFixed(digits);
+}
+
+function formatVisibleBodyDescription(body: VisibleBodyEventItem) {
+  const altitude = formatBodyMetric(body.altitude_degrees, 1);
+  const azimuth = formatBodyMetric(body.azimuth_degrees, 1);
+  const magnitude = formatBodyMetric(body.magnitude, 1);
+  const distance = toFiniteNumber(body.distance_from_earth_km);
+  const details = [
+    altitude ? `alt ${altitude} deg` : null,
+    azimuth ? `az ${azimuth} deg` : null,
+    body.constellation ? `constellation ${body.constellation}` : null,
+    magnitude ? `mag ${magnitude}` : null,
+    distance == null ? null : `${Math.round(distance).toLocaleString('en-US')} km`,
+  ].filter(Boolean);
+
+  return details.join(', ') || 'visible above the horizon';
 }
 
 function normalizeNote(value: string | null) {
@@ -934,6 +1083,112 @@ const styles = StyleSheet.create({
     width: 104,
     height: 104,
   },
+  visibleBodyCarousel: {
+    flex: 1,
+  },
+  visibleBodySliderContent: {
+    height: '100%',
+    alignItems: 'stretch',
+    gap: 10,
+    padding: 10,
+  },
+  visibleBodySlide: {
+    width: 520,
+    height: '100%',
+    borderRadius: Radius.sm,
+    overflow: 'hidden',
+    backgroundColor: Palette.bgDeep,
+    borderWidth: 1,
+    borderColor: Palette.borderSoft,
+  },
+  visibleBodyImage: {
+    width: '100%',
+    height: '100%',
+  },
+  visibleBodyFallback: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Palette.bgVoid,
+  },
+  visibleBodyFallbackText: {
+    color: Palette.accent,
+    fontSize: 54,
+    fontWeight: '800',
+  },
+  visibleBodyScrim: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: 52,
+    backgroundColor: 'transparent',
+  },
+  visibleBodyOverlay: {
+    position: 'absolute',
+    left: 12,
+    right: 12,
+    bottom: 8,
+    gap: 2,
+  },
+  visibleBodyName: {
+    color: Palette.textPrimary,
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  visibleBodyMeta: {
+    color: Palette.textSecondary,
+    fontSize: 10.5,
+    lineHeight: 13,
+  },
+  visibleBodyCarouselButton: {
+    position: 'absolute',
+    top: '50%',
+    width: 34,
+    height: 44,
+    marginTop: -22,
+    borderRadius: Radius.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: alpha(Palette.bgVoid, 0.72),
+    borderWidth: 1,
+    borderColor: Palette.borderSoft,
+  },
+  visibleBodyCarouselButtonLeft: {
+    left: 14,
+  },
+  visibleBodyCarouselButtonRight: {
+    right: 14,
+  },
+  visibleBodyCarouselButtonDisabled: {
+    opacity: 0.28,
+  },
+  visibleBodyCarouselButtonText: {
+    color: Palette.textPrimary,
+    fontSize: 30,
+    lineHeight: 32,
+    fontWeight: '700',
+  },
+  visibleBodyDots: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  visibleBodyDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: alpha(Palette.textPrimary, 0.36),
+  },
+  visibleBodyDotActive: {
+    width: 18,
+    backgroundColor: Palette.accent,
+  },
   badgeRow: {
     flexDirection: 'row',
   },
@@ -984,6 +1239,35 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 21,
     color: Palette.textSecondary,
+  },
+  visibleBodyDescriptionList: {
+    gap: 10,
+  },
+  visibleBodyDescriptionRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+  },
+  visibleBodyDescriptionBullet: {
+    color: Palette.accent,
+    fontSize: 16,
+    lineHeight: 20,
+    fontWeight: '800',
+  },
+  visibleBodyDescriptionTextWrap: {
+    flex: 1,
+    gap: 2,
+  },
+  visibleBodyDescriptionBody: {
+    color: Palette.textPrimary,
+    fontSize: 13.5,
+    lineHeight: 18,
+    fontWeight: '800',
+  },
+  visibleBodyDescriptionMeta: {
+    color: Palette.textSecondary,
+    fontSize: 13,
+    lineHeight: 19,
   },
   watchBtn: {
     backgroundColor: Palette.accentRed,

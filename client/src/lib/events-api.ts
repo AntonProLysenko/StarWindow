@@ -18,6 +18,17 @@ export interface LaunchDetails {
   status: string | null;
 }
 
+export interface VisibleBodyEventItem {
+  body: string;
+  altitude_degrees?: string | number | null;
+  azimuth_degrees?: string | number | null;
+  distance_from_earth_km?: string | number | null;
+  constellation?: string | null;
+  magnitude?: string | number | null;
+  image_url?: string | null;
+  image_source?: string | null;
+}
+
 /**
  * One row in the unified events list. Space events and rocket launches are
  * merged into this single normalized shape by the backend.
@@ -48,6 +59,7 @@ export interface EventListItem {
   webcast_live: boolean;
   video_url: string | null;
   launch_details: LaunchDetails | null;
+  visible_bodies?: VisibleBodyEventItem[];
   user_event_images?: SavedUserEventImage[];
 }
 
