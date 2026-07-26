@@ -42,7 +42,8 @@ export function fallbackIconSource(event: EventListItem): ImageSourcePropType | 
   const label = `${event.type} ${event.name}`.toLowerCase();
 
   if (label.includes('eclipse')) return ECLIPSE;
-  if (label.includes('spacewalk') || type === 'eva') return SPACEWALK;
+  if (type === 'eva' || type.includes('spacewalk')) return SPACEWALK;
+  if (label.includes('asteroid') || label.includes('comet') || label.includes('near-earth')) return null;
 
   // Launches keep the rocket emoji unless the API image exists; not "spacecraft".
   if (event.category === 'launch') return null;

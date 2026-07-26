@@ -141,8 +141,7 @@ function getSavedEventNote(event: EventListItem) {
 
 function isSpacewalkEvent(event: EventListItem) {
   const type = `${event.type ?? ''}`.toLowerCase();
-  const label = `${event.type ?? ''} ${event.name ?? ''}`.toLowerCase();
-  return label.includes('spacewalk') || type === 'eva';
+  return type === 'eva' || type.includes('spacewalk');
 }
 
 const styles = StyleSheet.create({

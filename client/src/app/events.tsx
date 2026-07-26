@@ -32,9 +32,13 @@ const FILTER_OPTIONS = [
   ALL,
   'Rocket Launch',
   'Meteor Shower',
+  'Asteroid Flyby',
+  'Comet Flyby',
+  'Near-Earth Object',
   'Celestial Events',
   'Spacecraft Event',
   'Spacewalk',
+  'Press Event',
 ];
 const PRIMARY_FILTERS = new Set(FILTER_OPTIONS);
 const CELESTIAL_TYPE_KEYWORDS = [
@@ -105,46 +109,116 @@ function normalizeParam(value?: string | null) {
   return (value ?? '').trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
+function getCanonicalFilterOption(option?: string | null) {
+  const normalized = normalizeParam(option);
+  if (normalized === 'celestial event') return 'Celestial Events';
+  if (normalized === 'rocket launch' || normalized === 'launch') return 'Rocket Launch';
+  if (normalized === 'eva') return 'Spacewalk';
+  return option || ALL;
+}
+
 function getFilterLabel(option: string) {
-  if (option === ALL) return '✦ All';
+  const canonicalOption = getCanonicalFilterOption(option);
+  if (canonicalOption === ALL) return '✦ All';
   return `${getEventEmoji({
-    category: option === 'Rocket Launch' ? 'launch' : 'event',
-    type: option,
-    name: option,
-  })} ${option}`;
+    category: canonicalOption === 'Rocket Launch' ? 'launch' : 'event',
+    type: canonicalOption,
+    name: canonicalOption,
+  })} ${canonicalOption}`;
 }
 
 function eventMatchesFilter(event: EventListItem, filter: string) {
-  if (filter === ALL) return true;
+  const canonicalFilter = getCanonicalFilterOption(filter);
+  if (canonicalFilter === ALL) return true;
 
-  const type = normalizeParam(event.type);
-  if (filter === 'Rocket Launch') return event.category === 'launch' || type.includes('launch');
-  if (filter === 'Meteor Shower') return type.includes('meteor');
-  if (filter === 'Spacecraft Event') return type.includes('spacecraft');
-  if (filter === 'Spacewalk') return type.includes('spacewalk') || type === 'eva';
-  if (filter === 'Celestial Events') {
-    return (
-      event.category !== 'launch' &&
-      !type.includes('meteor') &&
-      !type.includes('spacecraft') &&
-      !type.includes('spacewalk') &&
-      type !== 'eva' &&
-      (type === 'celestial event' || CELESTIAL_TYPE_KEYWORDS.some((keyword) => type.includes(keyword)))
-    );
+  const bucket = getEventFilterBucket(event);
+  if (canonicalFilter === 'Near-Earth Object') {
+    return bucket === 'Near-Earth Object' || bucket === 'Asteroid Flyby' || bucket === 'Comet Flyby';
   }
 
-  return event.type === filter;
+  if (PRIMARY_FILTERS.has(canonicalFilter)) {
+    return bucket === canonicalFilter;
+  }
+
+  return getCanonicalFilterOption(event.type) === canonicalFilter;
 }
 
 function isPrimaryFilterType(event: EventListItem) {
   const type = normalizeParam(event.type);
+  const canonicalType = getCanonicalFilterOption(event.type);
   return (
     event.category === 'launch' ||
-    type.includes('launch') ||
-    type.includes('meteor') ||
-    type.includes('spacewalk') ||
-    type === 'eva' ||
-    type === 'spacecraft event'
+    PRIMARY_FILTERS.has(canonicalType) ||
+    type === 'celestial event' ||
+    type === 'eva'
+  );
+}
+
+function getEventFilterBucket(event: EventListItem) {
+  const type = normalizeParam(event.type);
+  const name = normalizeParam(event.name);
+  const typeAndName = `${type} ${name}`;
+
+  if (event.category === 'launch') return 'Rocket Launch';
+  if (isPressEventType(type)) return 'Press Event';
+  if (type.includes('launch')) return 'Rocket Launch';
+  if (isSpacewalkEventType(type)) return 'Spacewalk';
+  if (isMeteorShowerType(type)) return 'Meteor Shower';
+  if (isAsteroidFlybyType(typeAndName)) return 'Asteroid Flyby';
+  if (isCometFlybyType(typeAndName)) return 'Comet Flyby';
+  if (isNearEarthObjectType(type)) return 'Near-Earth Object';
+  if (isSpacecraftEventType(type)) return 'Spacecraft Event';
+  if (isCelestialEventType(type, typeAndName)) return 'Celestial Events';
+
+  return getCanonicalFilterOption(event.type);
+}
+
+function isPressEventType(type: string) {
+  return (
+    type.includes('press') ||
+    type.includes('briefing') ||
+    type.includes('media event') ||
+    type.includes('news conference')
+  );
+}
+
+function isSpacewalkEventType(type: string) {
+  return type === 'eva' || type.includes('spacewalk');
+}
+
+function isMeteorShowerType(type: string) {
+  return type.includes('meteor') && type.includes('shower');
+}
+
+function isAsteroidFlybyType(label: string) {
+  return label.includes('asteroid') && label.includes('flyby');
+}
+
+function isCometFlybyType(label: string) {
+  return label.includes('comet') && label.includes('flyby');
+}
+
+function isNearEarthObjectType(type: string) {
+  return type.includes('near-earth');
+}
+
+function isSpacecraftEventType(type: string) {
+  return (
+    type.includes('spacecraft') ||
+    type.includes('docking') ||
+    type.includes('undocking') ||
+    type.includes('berthing') ||
+    type.includes('capture') ||
+    type.includes('release') ||
+    type.includes('reentry') ||
+    type.includes('landing')
+  );
+}
+
+function isCelestialEventType(type: string, typeAndName: string) {
+  return (
+    type === 'celestial event' ||
+    CELESTIAL_TYPE_KEYWORDS.some((keyword) => typeAndName.includes(keyword))
   );
 }
 
@@ -306,14 +380,22 @@ export default function EventsScreen() {
     const seen = new Set(PRIMARY_FILTERS);
 
     for (const event of events) {
-      if (!event.type || seen.has(event.type)) continue;
+      const option = getCanonicalFilterOption(event.type);
+      if (!event.type || seen.has(option)) continue;
       if (isPrimaryFilterType(event)) continue;
-      seen.add(event.type);
-      extraTypes.push(event.type);
+      seen.add(option);
+      extraTypes.push(option);
     }
 
     return [...FILTER_OPTIONS, ...extraTypes];
   }, [events]);
+
+  useEffect(() => {
+    const canonicalActiveType = getCanonicalFilterOption(activeType);
+    if (canonicalActiveType !== activeType && filterOptions.includes(canonicalActiveType)) {
+      setActiveType(canonicalActiveType);
+    }
+  }, [activeType, filterOptions]);
 
   const visibleEvents = useMemo(() => {
     if (activeType === ALL) return events;

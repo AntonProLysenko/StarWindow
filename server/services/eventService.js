@@ -5,13 +5,21 @@ const eventQueries = require("../db/queries/events");
 const launchQueries = require("../db/queries/launches");
 const locationQueries = require("../db/queries/locations");
 const meteorService = require("./meteorService");
+const smallBodyService = require("./smallBodyService");
 const { isCacheStale, TTL_MINUTES } = require("../middleware/cache");
 
 const LL2_BASE = "https://ll.thespacedevs.com/2.3.0";
 const DEFAULT_EVENT_TYPE = "Space Event";
 const EVENTS_PAGE_SIZE = 100;
 const LL2_THROTTLE_COOLDOWN_MS = 60 * 60 * 1000;
+const SMALL_BODY_REFRESH_COOLDOWN_MS = 6 * 60 * 60 * 1000;
+const SMALL_BODY_TTL_MINUTES = 6 * 60;
+const SMALL_BODY_EVENT_TYPES = ["Asteroid Flyby", "Comet Flyby"];
+const SMALL_BODY_TIMELINE_PAST_LIMIT = 30;
+const SMALL_BODY_TIMELINE_FUTURE_LIMIT = 60;
+const METEOR_SHOWER_EVENT_TYPE = "Meteor Shower";
 let eventsRefreshBlockedUntil = 0;
+const smallBodyRefreshes = new Map();
 
 function mapCachedEvent(row) {
   const videoUrls = parseUrlList(row.video_url);
@@ -218,12 +226,12 @@ async function getUpcomingList() {
     eventQueries.getUpcomingNonLaunchEvents(),
     launchQueries.getUpcomingLaunches(),
   ]);
-  const meteorShowers = meteorService.getMeteorShowers({
+  const meteorShowers = await attachSavedEventIdsToMeteorShowers(meteorService.getMeteorShowers({
     fromDate: now.toISOString(),
     toDate: nextYear.toISOString(),
-  }).results;
+  }).results);
 
-  const normalizedEvents = events.map((e) => ({
+  const normalizedEvents = events.filter((e) => !isMeteorShowerEventType(e.event_type)).map((e) => ({
     id: e.event_id,
     // event_id is the FK target for saving (user_events.event_id). For plain
     // events it equals id; kept as its own field so the client never has to know
@@ -298,7 +306,7 @@ async function getTimelineList({ includePast = false, pastDays = 365, futureDays
     eventQueries.getNonLaunchEventsInWindow({
       fromDate: windowStart.toISOString(),
       toDate: windowEnd.toISOString(),
-      limit: 400,
+      limit: null,
     }),
     launchQueries.getCachedLaunches({
       fromDate: windowStart.toISOString(),
@@ -306,12 +314,17 @@ async function getTimelineList({ includePast = false, pastDays = 365, futureDays
       limit: 400,
     }),
   ]);
-  const meteorShowers = meteorService.getMeteorShowers({
+  const meteorShowers = await attachSavedEventIdsToMeteorShowers(meteorService.getMeteorShowers({
     fromDate: windowStart.toISOString(),
     toDate: windowEnd.toISOString(),
-  }).results;
+  }).results);
 
-  const normalizedEvents = events.map((e) => ({
+  const timelineEvents = limitSmallBodyTimelineEvents(
+    events.filter((e) => !isMeteorShowerEventType(e.event_type)),
+    now
+  );
+
+  const normalizedEvents = timelineEvents.map((e) => ({
     id: e.event_id,
     event_id: e.event_id,
     category: "event",
@@ -368,17 +381,134 @@ module.exports = { getEvents, getSpacewalks, getUpcomingList, getTimelineList };
 
 async function refreshExternalEventsForWindow({ fromDate, toDate }) {
   const cachedAt = await eventQueries.getLatestCachedAt({ fromDate, toDate });
-  if (!isCacheStale(cachedAt, TTL_MINUTES.EVENTS)) return;
-  if (Date.now() < eventsRefreshBlockedUntil) return;
+  const shouldRefreshLl2 = isCacheStale(cachedAt, TTL_MINUTES.EVENTS) && Date.now() >= eventsRefreshBlockedUntil;
 
-  try {
-    await cacheExternalEvents({ fromDate, toDate });
-  } catch (error) {
-    if (error.status === 429 || /throttled/i.test(error.message)) {
-      eventsRefreshBlockedUntil = Date.now() + LL2_THROTTLE_COOLDOWN_MS;
+  if (shouldRefreshLl2) {
+    try {
+      await cacheExternalEvents({ fromDate, toDate });
+    } catch (error) {
+      if (error.status === 429 || /throttled/i.test(error.message)) {
+        eventsRefreshBlockedUntil = Date.now() + LL2_THROTTLE_COOLDOWN_MS;
+      }
+      console.warn("LL2 events refresh failed; returning cached events:", error.message);
     }
-    console.warn("LL2 events refresh failed; returning cached events:", error.message);
   }
+
+  await refreshSmallBodyEventsForWindow({ fromDate, toDate });
+}
+
+async function refreshSmallBodyEventsForWindow({ fromDate, toDate }) {
+  const key = `${toDateKey(fromDate)}|${toDateKey(toDate)}`;
+  const lastRefresh = smallBodyRefreshes.get(key) || 0;
+  if (Date.now() - lastRefresh < SMALL_BODY_REFRESH_COOLDOWN_MS) return;
+
+  const latestCachedAt = await eventQueries.getLatestCachedAtForEventTypes({
+    fromDate,
+    toDate,
+    eventTypes: SMALL_BODY_EVENT_TYPES,
+  });
+  if (latestCachedAt && !isCacheStale(latestCachedAt, SMALL_BODY_TTL_MINUTES)) {
+    smallBodyRefreshes.set(key, Date.now());
+    return;
+  }
+
+  if (latestCachedAt) {
+    smallBodyRefreshes.set(key, Date.now());
+    runSmallBodyRefresh({ fromDate, toDate, key }).catch((error) => {
+      console.warn("JPL small-body background refresh failed:", error.message);
+    });
+    return;
+  }
+
+  await runSmallBodyRefresh({ fromDate, toDate, key });
+}
+
+async function runSmallBodyRefresh({ fromDate, toDate, key }) {
+  try {
+    const flybys = await smallBodyService.fetchSmallBodyFlybys({ fromDate, toDate });
+    let saved = 0;
+
+    for (const flyby of flybys) {
+      try {
+        await eventQueries.saveEvent(flyby);
+        saved++;
+      } catch (error) {
+        console.error(`Failed to cache small-body event "${flyby.name}":`, error.message);
+      }
+    }
+
+    smallBodyRefreshes.set(key, Date.now());
+    if (flybys.length > 0) {
+      console.log(`\n=== JPL SMALL-BODY CACHE FILL ===\n    Fetched: ${flybys.length}\n    Saved/skipped idempotently: ${saved}`);
+    }
+  } catch (error) {
+    smallBodyRefreshes.set(key, Date.now() - SMALL_BODY_REFRESH_COOLDOWN_MS + 60 * 60 * 1000);
+    console.warn("JPL small-body refresh failed; returning cached events:", error.message);
+  }
+}
+
+function limitSmallBodyTimelineEvents(events, now) {
+  const smallBody = [];
+  const rest = [];
+
+  for (const event of events) {
+    if (isSmallBodyEventType(event.event_type)) {
+      smallBody.push(event);
+    } else {
+      rest.push(event);
+    }
+  }
+
+  const nowMs = now.getTime();
+  const past = smallBody.filter((event) => new Date(event.start_time).getTime() < nowMs);
+  const future = smallBody.filter((event) => new Date(event.start_time).getTime() >= nowMs);
+
+  return [
+    ...rest,
+    ...past.slice(-SMALL_BODY_TIMELINE_PAST_LIMIT),
+    ...future.slice(0, SMALL_BODY_TIMELINE_FUTURE_LIMIT),
+  ].sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
+}
+
+function isSmallBodyEventType(type) {
+  return SMALL_BODY_EVENT_TYPES.includes(String(type || ""));
+}
+
+async function attachSavedEventIdsToMeteorShowers(meteorShowers) {
+  const persisted = [];
+
+  for (const shower of meteorShowers) {
+    try {
+      const saved = await eventQueries.saveEvent({
+        name: shower.name,
+        startTime: shower.date,
+        endTime: null,
+        datePrecision: shower.date_precision || "Day",
+        description: shower.description || null,
+        eventType: METEOR_SHOWER_EVENT_TYPE,
+        webcastLive: false,
+        videoUrl: null,
+        infoUrl: shower.external_url || null,
+        imageUrl: shower.image_url || null,
+        locationId: null,
+      });
+
+      persisted.push({
+        ...shower,
+        id: saved.event_id,
+        event_id: saved.event_id,
+      });
+    } catch (error) {
+      console.error(`Failed to persist meteor shower "${shower.name}":`, error.message);
+      persisted.push(shower);
+    }
+  }
+
+  return persisted;
+}
+
+function isMeteorShowerEventType(type) {
+  return String(type || "") === METEOR_SHOWER_EVENT_TYPE;
 }
 
 function dedupeEventListItems(events) {
@@ -539,4 +669,8 @@ function toEndOfDay(value) {
 
 function isDateOnly(value) {
   return /^\d{4}-\d{2}-\d{2}$/.test(String(value));
+}
+
+function toDateKey(value) {
+  return String(value || "").slice(0, 10);
 }

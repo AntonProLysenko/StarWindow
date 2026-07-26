@@ -16,6 +16,7 @@ const database = require("../../config/database");
 module.exports = {
   getCachedEvents,
   getLatestCachedAt,
+  getLatestCachedAtForEventTypes,
   getUpcomingNonLaunchEvents,
   getNonLaunchEventsInWindow,
   getCachedSpacewalkEvents,
@@ -99,6 +100,37 @@ async function getLatestCachedAt(opts = {}) {
   return result.rows[0]?.latest || null;
 }
 
+async function getLatestCachedAtForEventTypes({ fromDate, toDate, eventTypes = [] } = {}) {
+  const values = [];
+  const where = [];
+
+  if (fromDate) {
+    values.push(fromDate);
+    where.push(`e.start_time >= $${values.length}::timestamptz`);
+  }
+
+  if (toDate) {
+    values.push(toDate);
+    where.push(`e.start_time <= $${values.length}::timestamptz`);
+  }
+
+  if (eventTypes.length > 0) {
+    values.push(eventTypes);
+    where.push(`et.event_type = ANY($${values.length}::text[])`);
+  }
+
+  const result = await database.query(
+    `
+      SELECT MAX(e.updated_at) AS latest
+      FROM public.events e
+      LEFT JOIN public.event_types et ON et.event_type_id = e.type_id
+      ${where.length > 0 ? `WHERE ${where.join(" AND ")}` : ""}
+    `,
+    values
+  );
+  return result.rows[0]?.latest || null;
+}
+
 /**
  * Return UPCOMING space events that are NOT rocket launches, soonest first.
  *
@@ -164,7 +196,12 @@ async function getNonLaunchEventsInWindow({ limit = 200, fromDate, toDate } = {}
     where.push(`e.start_time <= $${values.length}::timestamptz`);
   }
 
-  values.push(limit);
+  let limitClause = "";
+  if (Number.isFinite(limit) && limit > 0) {
+    values.push(limit);
+    limitClause = `LIMIT $${values.length}`;
+  }
+
   const result = await database.query(
     `
       SELECT * FROM (
@@ -185,7 +222,7 @@ async function getNonLaunchEventsInWindow({ limit = 200, fromDate, toDate } = {}
         ORDER BY e.name, e.start_time, e.event_id
       ) uniq
       ORDER BY uniq.start_time ASC
-      LIMIT $${values.length}
+      ${limitClause}
     `,
     values
   );

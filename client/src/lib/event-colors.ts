@@ -35,11 +35,16 @@ export function getEventEmoji(input: EventColorInput) {
   const name = normalize(input.name);
   const text = `${type} ${name}`;
 
-  if (normalize(input.category) === 'launch' || text.includes('launch')) return '🚀';
+  if (normalize(input.category) === 'launch') return '🚀';
+  if (isPressLike(type, text)) return '🎙️';
+  if (text.includes('launch')) return '🚀';
+  if (text.includes('asteroid') || text.includes('comet') || text.includes('flyby') || text.includes('near-earth')) {
+    return '☄️';
+  }
   if (text.includes('meteor') || text.includes('shower') || text.includes('reentry') || text.includes('splashdown')) {
     return '☄️';
   }
-  if (text.includes('spacewalk') || type === 'eva') return '🧑‍🚀';
+  if (type === 'eva' || type.includes('spacewalk')) return '🧑‍🚀';
   if (text.includes('press') || text.includes('briefing') || text.includes('conference') || text.includes('media')) {
     return '🎙️';
   }
@@ -62,24 +67,25 @@ function getEventAccent(input: EventColorInput) {
   const name = normalize(input.name);
   const text = `${type} ${name}`;
 
-  if (normalize(input.category) === 'launch' || text.includes('launch')) {
+  if (normalize(input.category) === 'launch') {
     return COLORS.hot;
   }
 
-  if (
-    text.includes('press') ||
-    text.includes('briefing') ||
-    text.includes('conference') ||
-    text.includes('media') ||
-    text.includes('conversation') ||
-    text.includes('change of command')
-  ) {
+  if (isPressLike(type, text)) {
     return COLORS.earth;
+  }
+
+  if (text.includes('launch')) {
+    return COLORS.hot;
   }
 
   if (
     text.includes('meteor') ||
     text.includes('shower') ||
+    text.includes('asteroid') ||
+    text.includes('comet') ||
+    text.includes('flyby') ||
+    text.includes('near-earth') ||
     text.includes('reentry') ||
     text.includes('splashdown')
   ) {
@@ -87,8 +93,8 @@ function getEventAccent(input: EventColorInput) {
   }
 
   if (
-    text.includes('spacewalk') ||
     type === 'eva' ||
+    type.includes('spacewalk') ||
     text.includes('docking') ||
     text.includes('undocking') ||
     text.includes('hatch') ||
@@ -117,10 +123,7 @@ function getEventAccent(input: EventColorInput) {
     text.includes('alignment') ||
     text.includes('lunar') ||
     text.includes('solar') ||
-    text.includes('moon') ||
-    text.includes('comet') ||
-    text.includes('asteroid') ||
-    text.includes('flyby')
+    text.includes('moon')
   ) {
     return COLORS.innerSpace;
   }
@@ -130,4 +133,16 @@ function getEventAccent(input: EventColorInput) {
 
 function normalize(value?: string | null) {
   return String(value ?? '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function isPressLike(type: string, text: string) {
+  return (
+    type.includes('press') ||
+    text.includes('press') ||
+    text.includes('briefing') ||
+    text.includes('conference') ||
+    text.includes('media') ||
+    text.includes('conversation') ||
+    text.includes('change of command')
+  );
 }

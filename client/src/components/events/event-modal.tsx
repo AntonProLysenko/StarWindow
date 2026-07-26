@@ -1153,8 +1153,7 @@ function isMeteorShowerEvent(event: EventListItem) {
 
 function isSpacewalkEvent(event: EventListItem) {
   const type = `${event.type ?? ''}`.toLowerCase();
-  const label = `${event.type ?? ''} ${event.name ?? ''}`.toLowerCase();
-  return label.includes('spacewalk') || type === 'eva';
+  return type === 'eva' || type.includes('spacewalk');
 }
 
 function isNonViewingScoreEvent(event: EventListItem) {
@@ -1164,6 +1163,11 @@ function isNonViewingScoreEvent(event: EventListItem) {
     isPressEvent(event) ||
     text.includes('docking') ||
     text.includes('undocking') ||
+    text.includes('asteroid') ||
+    text.includes('comet') ||
+    text.includes('flyby') ||
+    text.includes('near-earth') ||
+    text.includes('close approach') ||
     text.includes('landing') ||
     text.includes('farewell') ||
     text.includes('hatch') ||
