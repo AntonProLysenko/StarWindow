@@ -181,7 +181,7 @@ export default function SignUpScreen() {
 
     try {
       await usersService.saveEventTypes(selectedEventTypeIds);
-      router.replace('/map');
+      router.replace('/');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not save event types.');
     } finally {

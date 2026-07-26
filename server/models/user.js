@@ -232,6 +232,21 @@ async function updatePassword(userId, hashedPassword) {
 
 // Resolve the base user status (lowest min_points) — the tier every new signup
 // starts at. Mirrors the base-tier ordering in db/queries/leveling.js.
+function validatePassword(password) {
+  if (
+    password.length < 8 ||
+    !/[A-Z]/.test(password) ||
+    !/\d/.test(password) ||
+    !/[^A-Za-z0-9]/.test(password)
+  ) {
+    const error = new Error(
+      "Password must be at least 8 characters and include one uppercase letter, one number, and one special symbol."
+    );
+    error.status = 400;
+    throw error;
+  }
+}
+
 async function getBaseStatusId() {
   const result = await database.query(
     `
