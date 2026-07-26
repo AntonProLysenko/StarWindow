@@ -1,5 +1,5 @@
 import React, { memo, useMemo } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { getEventIconByType } from '@/lib/event-icons';
 import { Palette, Radius, Spacing, alpha } from '@/constants/tokens';
@@ -11,6 +11,7 @@ export type CalendarEvent = {
   type?: string;
   eventType?: string;
   icon?: string;
+  imageUrl?: string | null;
 };
 
 type CalendarDay = {
@@ -126,11 +127,17 @@ function MonthGridComponent({
                   <View style={[styles.eventIconsContainer, compact && styles.eventIconsContainerCompact]}>
                     {dayEvents.slice(0, compact ? 1 : 3).map((event) => (
                       <View key={event.id} style={[styles.eventIconBox, compact && styles.eventIconBoxCompact]}>
-                        {!compact && (
+                        {event.imageUrl ? (
+                          <Image
+                            source={{ uri: event.imageUrl }}
+                            style={[styles.eventImage, compact && styles.eventImageCompact]}
+                            resizeMode="cover"
+                          />
+                        ) : !compact ? (
                           <Text style={styles.eventIcon}>
                             {event.icon ?? getEventIconByType(event.type ?? event.eventType)}
                           </Text>
-                        )}
+                        ) : null}
                       </View>
                     ))}
                   </View>
@@ -275,10 +282,18 @@ const styles = StyleSheet.create({
     borderRadius: 3,
     justifyContent: 'center',
     alignItems: 'center',
+    overflow: 'hidden',
   },
   eventIconBoxCompact: {
     width: 3,
     height: 3,
+    borderRadius: 2,
+  },
+  eventImage: {
+    width: '100%',
+    height: '100%',
+  },
+  eventImageCompact: {
     borderRadius: 2,
   },
   eventIcon: {

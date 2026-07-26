@@ -1,5 +1,5 @@
 import React, { memo, useEffect, useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { Image, Pressable, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { MonthGrid } from '@/components/calendar/month-grid';
@@ -9,7 +9,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Palette, Radius, Spacing } from '@/constants/tokens';
 import { useCalendarEvents } from '@/hooks/use-calendar-events';
-import { getEventIconByType } from '@/lib/event-icons';
+import { ALL_EVENT_FILTER, EVENT_FILTER_OPTIONS, filterEvents, getEventIconByType } from '@/lib/event-icons';
 import type { EventListItem } from '@/lib/events-api';
 import {
   getCalendarEventsForDate,
@@ -20,7 +20,7 @@ import { getOrRequestUserLocation } from '@/utilities/user-location-service';
 import { getUser } from '@/utilities/users-service';
 import { dvw, dvh } from '@/utilities/responsive-dimensions';
 
-const categories = ['Meteor Showers', 'Rocket Launches', 'Alignments', 'More Filters'];
+const categories = EVENT_FILTER_OPTIONS;
 const MONTHS_BEHIND_TO_FETCH = 1;
 const MONTHS_AHEAD_TO_FETCH = 1;
 const CALENDAR_GRID_MAX_HEIGHT = 840;
@@ -138,6 +138,7 @@ export default function CalendarScreen() {
   const [browserCoords, setBrowserCoords] = useState<{ latitude: number; longitude: number } | null>(null);
   const [locationNotice, setLocationNotice] = useState('Requesting browser location for visible sky events.');
   const [selectedEvent, setSelectedEvent] = useState<EventListItem | null>(null);
+  const [activeFilter, setActiveFilter] = useState(ALL_EVENT_FILTER);
   const userId = getUser()?.user_id ?? null;
 
   useEffect(() => {
@@ -181,13 +182,14 @@ export default function CalendarScreen() {
   }, [browserCoords, loadedWindow.fromDate, loadedWindow.toDate]);
   const { events, isLoading, error } = useCalendarEvents(calendarQuery);
 
+  const filteredEvents = useMemo(() => filterEvents(events, activeFilter), [events, activeFilter]);
   const selectedDayEvents = useMemo(
-    () => getCalendarEventsForDate(events, selectedDate),
-    [events, selectedDate]
+    () => getCalendarEventsForDate(filteredEvents, selectedDate),
+    [filteredEvents, selectedDate]
   );
   const currentMonthEvents = useMemo(
-    () => getCalendarEventsForMonth(events, currentYear, currentMonth),
-    [events, currentYear, currentMonth]
+    () => getCalendarEventsForMonth(filteredEvents, currentYear, currentMonth),
+    [filteredEvents, currentYear, currentMonth]
   );
 
   const isVertical = width < 900;
@@ -239,13 +241,19 @@ export default function CalendarScreen() {
 
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollViewContent}>
         <View style={styles.filterButtonsContainer}>
-          {categories.map((category) => (
-            <ThemedView key={category} style={styles.categoryPill}>
-              <ThemedText type="small" style={styles.categoryText}>
-                {category}
-              </ThemedText>
-            </ThemedView>
-          ))}
+          {categories.map((category) => {
+            const active = category === activeFilter;
+            return (
+              <Pressable
+                key={category}
+                onPress={() => setActiveFilter(category)}
+                style={({ pressed }) => [styles.categoryPill, active && styles.categoryPillActive, pressed && styles.pressed]}>
+                <ThemedText type="small" style={[styles.categoryText, active && styles.categoryTextActive]}>
+                  {category}
+                </ThemedText>
+              </Pressable>
+            );
+          })}
         </View>
         <ThemedText type="small" themeColor="textSecondary" style={styles.locationNotice}>
           {locationNotice}
@@ -308,7 +316,11 @@ export default function CalendarScreen() {
                         onPress={() => setSelectedEvent(calendarEventToEventListItem(event))}
                         style={({ pressed }) => [styles.eventCard, pressed && styles.pressed]}>
                         <View style={styles.eventCardIconBox}>
-                          <ThemedText style={styles.eventCardIcon}>{event.icon ?? getEventIconByType(event.type)}</ThemedText>
+                          {event.imageUrl ? (
+                            <Image source={{ uri: event.imageUrl }} style={styles.eventCardImage} resizeMode="cover" />
+                          ) : (
+                            <ThemedText style={styles.eventCardIcon}>{event.icon ?? getEventIconByType(event.type)}</ThemedText>
+                          )}
                         </View>
                         <View style={styles.eventContent}>
                           <ThemedText type="smallBold" style={styles.eventTitle}>
@@ -400,10 +412,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.md,
     borderRadius: Radius.pill,
   },
+  categoryPillActive: {
+    backgroundColor: Palette.accent,
+    borderColor: Palette.accent,
+  },
   categoryText: {
     color: Palette.accent,
     fontWeight: '700',
     letterSpacing: 0.4,
+  },
+  categoryTextActive: {
+    color: Palette.textPrimary,
   },
   calendarContainer: {
     marginTop: Spacing.xs,
@@ -508,6 +527,13 @@ const styles = StyleSheet.create({
     height: 40,
     backgroundColor: Palette.accentMuted,
     borderRadius: Radius.sm,
+    overflow: 'hidden',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  eventCardImage: {
+    width: '100%',
+    height: '100%',
   },
   eventCardIcon: {
     textAlign: 'center',

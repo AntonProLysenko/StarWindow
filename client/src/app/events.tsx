@@ -20,21 +20,13 @@ import { EventCard } from '@/components/events/event-card';
 import { EventModal } from '@/components/events/event-modal';
 import { Palette, Radius } from '@/constants/tokens';
 import { fetchEventsList, type EventListItem } from '@/lib/events-api';
+import { ALL_EVENT_FILTER, EVENT_FILTER_OPTIONS, filterEvents } from '@/lib/event-icons';
 import { getOrRequestUserLocation } from '@/utilities/user-location-service';
 import { getUser } from '@/utilities/users-service';
 import { dvw } from '@/utilities/responsive-dimensions';
 
-const ALL = 'All';
 const PAST_DAYS_TO_SHOW = 365;
 const FUTURE_DAYS_TO_SHOW = 365;
-const FILTER_OPTIONS = [
-  ALL,
-  'Rocket Launch',
-  'Meteor Shower',
-  'Celestial Events',
-  'Spacecraft Event',
-  'Spacewalk',
-];
 
 type EventRouteParams = {
   eventId?: string | string[];
@@ -55,26 +47,6 @@ function firstParam(value?: string | string[]) {
 
 function normalizeParam(value?: string | null) {
   return (value ?? '').trim().toLowerCase().replace(/\s+/g, ' ');
-}
-
-function eventMatchesFilter(event: EventListItem, filter: string) {
-  if (filter === ALL) return true;
-
-  const type = normalizeParam(event.type);
-  if (filter === 'Rocket Launch') return event.category === 'launch' || type.includes('launch');
-  if (filter === 'Meteor Shower') return type.includes('meteor');
-  if (filter === 'Spacecraft Event') return type.includes('spacecraft');
-  if (filter === 'Spacewalk') return type.includes('spacewalk');
-  if (filter === 'Celestial Events') {
-    return (
-      event.category !== 'launch' &&
-      !type.includes('meteor') &&
-      !type.includes('spacecraft') &&
-      !type.includes('spacewalk')
-    );
-  }
-
-  return event.type === filter;
 }
 
 function getEventRouteKey(params: EventRouteParams) {
@@ -169,7 +141,7 @@ export default function EventsScreen() {
   const [events, setEvents] = useState<EventListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeType, setActiveType] = useState<string>(ALL);
+  const [activeType, setActiveType] = useState<string>(ALL_EVENT_FILTER);
   const listRef = useRef<ScrollView>(null);
   const [upcomingAnchorY, setUpcomingAnchorY] = useState<number | null>(null);
   const [didAlignToUpcoming, setDidAlignToUpcoming] = useState(false);
@@ -223,10 +195,7 @@ export default function EventsScreen() {
   // Filter options are derived from the types actually present in the data,
   // with "All" always first. Order preserves first-seen (already chronological).
   // Client-side filtering only — no re-fetch. Data is already sorted soonest-first.
-  const visibleEvents = useMemo(() => {
-    if (activeType === ALL) return events;
-    return events.filter((event) => eventMatchesFilter(event, activeType));
-  }, [events, activeType]);
+  const visibleEvents = useMemo(() => filterEvents(events, activeType), [events, activeType]);
 
   const { pastEvents, upcomingEvents } = useMemo(() => {
     const now = Date.now();
@@ -289,7 +258,7 @@ export default function EventsScreen() {
           showsHorizontalScrollIndicator={false}
           style={styles.filterBar}
           contentContainerStyle={styles.filterBarContent}>
-          {FILTER_OPTIONS.map((option) => {
+          {EVENT_FILTER_OPTIONS.map((option) => {
             const active = option === activeType;
             return (
               <Pressable

@@ -174,15 +174,30 @@ export type CalendarEventsQuery = {
 };
 
 function getEventIcon(type?: string) {
-  const normalized = type?.toLowerCase() ?? '';
-  if (normalized.includes('meteor')) return 'M';
-  if (normalized.includes('launch')) return 'L';
-  if (normalized.includes('eclipse')) return 'E';
-  if (normalized.includes('spacewalk')) return 'S';
-  if (normalized.includes('iss')) return 'I';
-  if (normalized.includes('visible body')) return 'B';
-  if (normalized.includes('moon')) return 'M';
-  return '*';
+  const normalized = (type ?? '').trim().toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+
+  if (!normalized) return '✨';
+  if (normalized.includes('meteor')) return '☄️';
+  if (normalized.includes('launch')) return '🚀';
+  if (normalized.includes('eclipse')) return '🌑';
+  if (normalized.includes('spacewalk')) return '🧑‍🚀';
+  if (normalized.includes('iss') || normalized.includes('space station')) return '🛰️';
+  if (normalized.includes('visible body')) return '🔭';
+  if (normalized.includes('moon')) return '🌕';
+  if (
+    normalized.includes('spacecraft') ||
+    normalized.includes('docking') ||
+    normalized.includes('berthing') ||
+    normalized.includes('flyby') ||
+    normalized.includes('orbit insertion') ||
+    normalized.includes('maneuver') ||
+    normalized.includes('rendezvous') ||
+    normalized.includes('deploy')
+  ) {
+    return '🛰️';
+  }
+
+  return '✨';
 }
 
 function formatEventTime(date: Date, precision?: string) {
