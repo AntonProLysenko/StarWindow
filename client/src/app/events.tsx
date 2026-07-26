@@ -21,25 +21,17 @@ import { EventModal } from '@/components/events/event-modal';
 import { Palette, Radius } from '@/constants/tokens';
 import { useSharedEvents } from '@/context/events-context';
 import { getEventEmoji } from '@/lib/event-colors';
-import type { EventListItem } from '@/lib/events-api';
+import { fetchEventsList, type EventListItem } from '@/lib/events-api';
+import { ALL_EVENT_FILTER, EVENT_FILTER_OPTIONS, filterEvents } from '@/lib/event-icons';
 import { getOrRequestUserLocation } from '@/utilities/user-location-service';
 import { getUser } from '@/utilities/users-service';
 import { dvw } from '@/utilities/responsive-dimensions';
 
-const ALL = 'All';
-const FILTER_OPTIONS = [
-  ALL,
-  'Rocket Launch',
-  'Meteor Shower',
-  'Asteroid Flyby',
-  'Comet Flyby',
-  'Near-Earth Object',
-  'Celestial Events',
-  'Spacecraft Event',
-  'Spacewalk',
-  'Press Event',
-];
-const PRIMARY_FILTERS = new Set(FILTER_OPTIONS);
+const PAST_DAYS_TO_SHOW = 365;
+const FUTURE_DAYS_TO_SHOW = 365;
+const ALL = ALL_EVENT_FILTER;
+const FILTER_OPTIONS = EVENT_FILTER_OPTIONS;
+const PRIMARY_FILTERS: Set<string> = new Set(FILTER_OPTIONS);
 const CELESTIAL_TYPE_KEYWORDS = [
   'eclipse',
   'occultation',
@@ -127,19 +119,7 @@ function getFilterLabel(option: string) {
 }
 
 function eventMatchesFilter(event: EventListItem, filter: string) {
-  const canonicalFilter = getCanonicalFilterOption(filter);
-  if (canonicalFilter === ALL) return true;
-
-  const bucket = getEventFilterBucket(event);
-  if (canonicalFilter === 'Near-Earth Object') {
-    return bucket === 'Near-Earth Object' || bucket === 'Asteroid Flyby' || bucket === 'Comet Flyby';
-  }
-
-  if (PRIMARY_FILTERS.has(canonicalFilter)) {
-    return bucket === canonicalFilter;
-  }
-
-  return getCanonicalFilterOption(event.type) === canonicalFilter;
+  return filterEvents([event], filter).length > 0;
 }
 
 function isPrimaryFilterType(event: EventListItem) {
@@ -220,7 +200,6 @@ function isCelestialEventType(type: string, typeAndName: string) {
     CELESTIAL_TYPE_KEYWORDS.some((keyword) => typeAndName.includes(keyword))
   );
 }
-
 function getEventRouteKey(params: EventRouteParams) {
   return [
     firstParam(params.eventId),
@@ -318,7 +297,7 @@ export default function EventsScreen() {
   const routeParams = useLocalSearchParams<EventRouteParams>();
   const routeEventKey = getEventRouteKey(routeParams);
   const { events, isLoading: loading, error } = useSharedEvents();
-  const [activeType, setActiveType] = useState<string>(ALL);
+  const [activeType, setActiveType] = useState<string>(ALL_EVENT_FILTER);
   const listRef = useRef<ScrollView>(null);
   const [upcomingAnchorY, setUpcomingAnchorY] = useState<number | null>(null);
   const [didAlignToUpcoming, setDidAlignToUpcoming] = useState(false);
@@ -369,10 +348,7 @@ export default function EventsScreen() {
     }
   }, [activeType, filterOptions]);
 
-  const visibleEvents = useMemo(() => {
-    if (activeType === ALL) return events;
-    return events.filter((event) => eventMatchesFilter(event, activeType));
-  }, [events, activeType]);
+  const visibleEvents = useMemo(() => filterEvents(events, activeType), [events, activeType]);
 
   const { pastEvents, upcomingEvents } = useMemo(() => {
     const now = Date.now();
@@ -443,7 +419,13 @@ export default function EventsScreen() {
                 onPress={() => setActiveType(option)}
                 style={[styles.filterPill, active && styles.filterPillActive]}>
                 <Text style={[styles.filterPillText, active && styles.filterPillTextActive]}>
-                  {getFilterLabel(option)}
+                  {option === ALL_EVENT_FILTER 
+                    ? `✦ ${option}` 
+                    : `${getEventEmoji({
+                        category: option === 'Rocket Launch' ? 'launch' : 'event',
+                        type: option,
+                        name: option,
+                      })} ${option}`}
                 </Text>
               </Pressable>
             );

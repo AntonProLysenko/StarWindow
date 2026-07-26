@@ -1,5 +1,5 @@
-import React, { memo, useMemo } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import React, { memo, useMemo, useState } from 'react';
+import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { getEventIconByType } from '@/lib/event-icons';
 import { Palette, Radius, Spacing, alpha } from '@/constants/tokens';
@@ -11,6 +11,7 @@ export type CalendarEvent = {
   type?: string;
   eventType?: string;
   icon?: string;
+  imageUrl?: string | null;
 };
 
 type CalendarDay = {
@@ -66,6 +67,7 @@ function MonthGridComponent({
   onSelectDate,
   compact = false,
 }: MonthGridProps) {
+  const [brokenImages, setBrokenImages] = useState<Record<string, boolean>>({});
   const weeks = useMemo(() => getCalendarWeeks(year, month), [year, month]);
   const eventsByDate = useMemo(() => {
     const byDate = new Map<number, CalendarEvent[]>();
@@ -124,15 +126,27 @@ function MonthGridComponent({
                 </View>
                 {dayEvents.length > 0 && (
                   <View style={[styles.eventIconsContainer, compact && styles.eventIconsContainerCompact]}>
-                    {dayEvents.slice(0, compact ? 1 : 3).map((event) => (
-                      <View key={event.id} style={[styles.eventIconBox, compact && styles.eventIconBoxCompact]}>
-                        {!compact && (
-                          <Text style={styles.eventIcon}>
-                            {event.icon ?? getEventIconByType(event.type ?? event.eventType)}
-                          </Text>
-                        )}
-                      </View>
-                    ))}
+                    {dayEvents.slice(0, compact ? 1 : 3).map((event) => {
+                      const iconLabel = event.icon ?? getEventIconByType(event.type ?? event.eventType);
+                      const showImage = Boolean(event.imageUrl) && !brokenImages[event.id];
+
+                      return (
+                        <View key={event.id} style={[styles.eventIconBox, compact && styles.eventIconBoxCompact]}>
+                          {showImage ? (
+                            <Image
+                              source={{ uri: event.imageUrl! }}
+                              style={[styles.eventImage, compact && styles.eventImageCompact]}
+                              resizeMode="cover"
+                              onError={() => setBrokenImages((current) => ({ ...current, [event.id]: true }))}
+                            />
+                          ) : (
+                            <Text style={[styles.eventIcon, compact && styles.eventIconCompact]}>
+                              {compact ? '●' : iconLabel}
+                            </Text>
+                          )}
+                        </View>
+                      );
+                    })}
                   </View>
                 )}
               </View>
@@ -275,16 +289,28 @@ const styles = StyleSheet.create({
     borderRadius: 3,
     justifyContent: 'center',
     alignItems: 'center',
+    overflow: 'hidden',
   },
   eventIconBoxCompact: {
     width: 3,
     height: 3,
     borderRadius: 2,
   },
+  eventImage: {
+    width: '100%',
+    height: '100%',
+  },
+  eventImageCompact: {
+    borderRadius: 2,
+  },
   eventIcon: {
     color: Palette.textPrimary,
     fontSize: 11,
     fontWeight: 'bold',
+  },
+  eventIconCompact: {
+    fontSize: 6,
+    lineHeight: 6,
   },
   pressed: {
     opacity: 0.7,
