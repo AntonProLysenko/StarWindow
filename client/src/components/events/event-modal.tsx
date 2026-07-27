@@ -86,6 +86,7 @@ export function EventModal({
   event,
   onClose,
   onSavedEventUpdated,
+  onSavedStateChange,
   userId,
   userLat,
   userLon,
@@ -93,6 +94,7 @@ export function EventModal({
   event: EventListItem;
   onClose: () => void;
   onSavedEventUpdated?: (updates: { event_comment?: string | null; event_rating?: number | null }) => void;
+  onSavedStateChange?: (eventId: number | string, saved: boolean) => void;
   userId: number | null;
   userLat: number | null;
   userLon: number | null;
@@ -322,6 +324,7 @@ export function EventModal({
       try {
         const res = await saveUserEvent(event.event_id);
         setSavedId(res.user_event_id);
+        onSavedStateChange?.(event.event_id, true);
       } catch {
         setSaved(false); // rollback
         setSaveError('Could not save. Try again.');
@@ -340,6 +343,7 @@ export function EventModal({
         setSavedNote('');
         setImages([]);
         onSavedEventUpdated?.({ event_comment: null });
+        onSavedStateChange?.(event.event_id, false);
       } catch {
         setSaved(true); // rollback
         setSaveError('Could not remove. Try again.');

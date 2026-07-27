@@ -12,7 +12,7 @@ import { useSharedEvents } from '@/context/events-context';
 import { useVisibleBodyEvents } from '@/hooks/use-visible-body-events';
 import { ALL_EVENT_FILTER, EVENT_FILTER_OPTIONS, filterEvents, getEventIconByType } from '@/lib/event-icons';
 import { getEventEmoji } from '@/lib/event-colors';
-import type { EventListItem } from '@/lib/events-api';
+import { fetchSavedUserEvents, type EventListItem } from '@/lib/events-api';
 import * as eventTypesAPI from '@/utilities/event-types-api';
 import {
   eventListItemToCalendarEvent,
@@ -168,6 +168,7 @@ export default function CalendarScreen() {
   const [activeFilter, setActiveFilter] = useState(ALL_EVENT_FILTER);
   const [selectedProfileEventTypes, setSelectedProfileEventTypes] = useState<string[]>([]);
   const [didLoadProfileEventTypes, setDidLoadProfileEventTypes] = useState(false);
+  const [savedEventIds, setSavedEventIds] = useState<Set<string>>(() => new Set());
   const userId = getUser()?.user_id ?? null;
   const { events: sharedEvents, isLoading: sharedEventsLoading, error: sharedEventsError } = useSharedEvents();
 
@@ -250,6 +251,22 @@ export default function CalendarScreen() {
   }, []);
 
   useEffect(() => {
+    if (userId == null) {
+      setSavedEventIds(new Set());
+      return;
+    }
+
+    const controller = new AbortController();
+    fetchSavedUserEvents(controller.signal)
+      .then((savedEvents) => {
+        setSavedEventIds(new Set(savedEvents.map((event) => String(event.event_id))));
+      })
+      .catch(() => {});
+
+    return () => controller.abort();
+  }, [userId]);
+
+  useEffect(() => {
     let cancelled = false;
 
     (async () => {
@@ -323,6 +340,22 @@ export default function CalendarScreen() {
     } else {
       setDisplayedMonth(currentYear, currentMonth + 1);
     }
+  }
+
+  function handleSavedStateChange(eventId: number | string, saved: boolean) {
+    setSavedEventIds((current) => {
+      const next = new Set(current);
+      if (saved) {
+        next.add(String(eventId));
+      } else {
+        next.delete(String(eventId));
+      }
+      return next;
+    });
+  }
+
+  function isSavedCalendarEvent(event: CalendarEvent) {
+    return event.eventId != null && savedEventIds.has(String(event.eventId));
   }
 
   return (
@@ -414,7 +447,11 @@ export default function CalendarScreen() {
                       <Pressable
                         key={event.id}
                         onPress={() => setSelectedEvent(calendarEventToEventListItem(event))}
-                        style={({ pressed }) => [styles.eventCard, pressed && styles.pressed]}>
+                        style={({ pressed }) => [
+                          styles.eventCard,
+                          isSavedCalendarEvent(event) && styles.eventCardSaved,
+                          pressed && styles.pressed,
+                        ]}>
                         <View style={styles.eventCardIconBox}>
                           {event.imageUrl ? (
                             <Image source={{ uri: event.imageUrl }} style={styles.eventCardImage} resizeMode="cover" />
@@ -470,6 +507,7 @@ export default function CalendarScreen() {
         <EventModal
           event={selectedEvent}
           onClose={() => setSelectedEvent(null)}
+          onSavedStateChange={handleSavedStateChange}
           userId={userId}
           userLat={browserCoords?.latitude ?? null}
           userLon={browserCoords?.longitude ?? null}
@@ -619,8 +657,14 @@ const styles = StyleSheet.create({
     backgroundColor: Palette.border,
     padding: Spacing.md,
     borderRadius: Radius.md,
+    borderWidth: 1,
+    borderColor: 'transparent',
     flexDirection: 'row',
     gap: Spacing.md,
+  },
+  eventCardSaved: {
+    borderWidth: 2,
+    borderColor: Palette.accentBlue,
   },
   eventCardIconBox: {
     width: 40,

@@ -57,9 +57,11 @@ export function truncate(text: string | null, max: number = DESCRIPTION_MAX): st
 
 export function EventCard({
   event,
+  isSaved = false,
   onPress,
 }: {
   event: EventListItem;
+  isSaved?: boolean;
   onPress: (event: EventListItem) => void;
 }) {
   const isLaunch = event.category === 'launch';
@@ -75,6 +77,7 @@ export function EventCard({
       onPress={() => onPress(event)}
       style={({ pressed }) => [
         styles.card,
+        isSaved && styles.cardSaved,
         pressed && styles.cardPressed,
       ]}>
       <View style={styles.thumb}>
@@ -152,6 +155,10 @@ const styles = StyleSheet.create({
     borderColor: Palette.borderSoft,
     borderRadius: Radius.md,
     overflow: 'hidden',
+  },
+  cardSaved: {
+    borderWidth: 2,
+    borderColor: Palette.accentBlue,
   },
   cardPressed: {
     opacity: 0.75,

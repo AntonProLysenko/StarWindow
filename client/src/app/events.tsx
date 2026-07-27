@@ -21,7 +21,7 @@ import { EventModal } from '@/components/events/event-modal';
 import { Palette, Radius } from '@/constants/tokens';
 import { useSharedEvents } from '@/context/events-context';
 import { getEventEmoji } from '@/lib/event-colors';
-import { fetchEventsList, type EventListItem } from '@/lib/events-api';
+import { fetchSavedUserEvents, type EventListItem } from '@/lib/events-api';
 import { ALL_EVENT_FILTER, EVENT_FILTER_OPTIONS, filterEvents } from '@/lib/event-icons';
 import { getOrRequestUserLocation } from '@/utilities/user-location-service';
 import { getUser } from '@/utilities/users-service';
@@ -307,6 +307,7 @@ export default function EventsScreen() {
   const [openedRouteEventKey, setOpenedRouteEventKey] = useState<string | null>(null);
   const [userLat, setUserLat] = useState<number | null>(null);
   const [userLon, setUserLon] = useState<number | null>(null);
+  const [savedEventIds, setSavedEventIds] = useState<Set<string>>(() => new Set());
   const userId = getUser()?.user_id ?? null;
 
   // Resolve the user's location once (best-effort — modal degrades without it).
@@ -322,6 +323,22 @@ export default function EventsScreen() {
       }
     })();
   }, []);
+
+  useEffect(() => {
+    if (userId == null) {
+      setSavedEventIds(new Set());
+      return;
+    }
+
+    const controller = new AbortController();
+    fetchSavedUserEvents(controller.signal)
+      .then((savedEvents) => {
+        setSavedEventIds(new Set(savedEvents.map((event) => String(event.event_id))));
+      })
+      .catch(() => {});
+
+    return () => controller.abort();
+  }, [userId]);
 
   // Filter options are derived from the types actually present in the data,
   // with "All" always first. Order preserves first-seen (already chronological).
@@ -397,6 +414,22 @@ export default function EventsScreen() {
     setSelectedEvent(event);
   };
 
+  function handleSavedStateChange(eventId: number | string, saved: boolean) {
+    setSavedEventIds((current) => {
+      const next = new Set(current);
+      if (saved) {
+        next.add(String(eventId));
+      } else {
+        next.delete(String(eventId));
+      }
+      return next;
+    });
+  }
+
+  function isSavedEvent(event: EventListItem) {
+    return savedEventIds.has(String(event.event_id));
+  }
+
   return (
     <View style={styles.screen}>
       <View style={styles.header}>
@@ -467,6 +500,7 @@ export default function EventsScreen() {
                 <EventCard
                   key={`${event.category}-${event.id}`}
                   event={event}
+                  isSaved={isSavedEvent(event)}
                   onPress={handleEventClick}
                 />
               ))}
@@ -483,6 +517,7 @@ export default function EventsScreen() {
             <EventCard
               key={`${event.category}-${event.id}`}
               event={event}
+              isSaved={isSavedEvent(event)}
               onPress={handleEventClick}
             />
             ))}
@@ -495,6 +530,7 @@ export default function EventsScreen() {
         <EventModal
           event={selectedEvent}
           onClose={() => setSelectedEvent(null)}
+          onSavedStateChange={handleSavedStateChange}
           userId={userId}
           userLat={userLat}
           userLon={userLon}
