@@ -500,16 +500,6 @@ function EditProfile({
                   {isSavingPreferences ? 'SAVING...' : 'SAVE PREFERENCES'}
                 </Text>
               </Pressable>
-              <Pressable
-                onPress={() => {
-                  setSelectedEventTypeIds(savedEventTypeIds);
-                  setPreferencesError('');
-                  setPreferencesMessage('');
-                }}
-                disabled={isSavingPreferences || !hasPreferenceChanges}
-                style={styles.secondaryButton}>
-                <Text style={styles.secondaryButtonText}>RESET</Text>
-              </Pressable>
             </View>
           </>
         )}

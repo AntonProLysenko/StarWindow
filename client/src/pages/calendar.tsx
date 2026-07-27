@@ -13,6 +13,7 @@ import { useVisibleBodyEvents } from '@/hooks/use-visible-body-events';
 import { ALL_EVENT_FILTER, EVENT_FILTER_OPTIONS, filterEvents, getEventIconByType } from '@/lib/event-icons';
 import { getEventEmoji } from '@/lib/event-colors';
 import type { EventListItem } from '@/lib/events-api';
+import * as eventTypesAPI from '@/utilities/event-types-api';
 import {
   eventListItemToCalendarEvent,
   getCalendarEventsForDate,
@@ -20,7 +21,7 @@ import {
   type CalendarEvent,
 } from '@/utilities/events-api';
 import { getOrRequestUserLocation } from '@/utilities/user-location-service';
-import { getUser } from '@/utilities/users-service';
+import { getToken, getUser, getUserEventTypes } from '@/utilities/users-service';
 import { dvw, dvh } from '@/utilities/responsive-dimensions';
 
 const categories = EVENT_FILTER_OPTIONS;
@@ -98,6 +99,32 @@ function getCalendarFetchWindow(year: number, month: number) {
   };
 }
 
+function normalizeEventTypeName(value?: string | null) {
+  return (value ?? '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function getEventTypeAliases(typeName: string) {
+  const normalized = normalizeEventTypeName(typeName);
+  const aliases = new Set([normalized]);
+
+  if (normalized === 'launch') aliases.add('rocket launch');
+  if (normalized === 'rocket launch') aliases.add('launch');
+  if (normalized === 'eva') aliases.add('spacewalk');
+  if (normalized === 'spacewalk') aliases.add('eva');
+
+  return aliases;
+}
+
+function eventMatchesSelectedTypes(event: CalendarEvent, selectedTypeNames: string[]) {
+  if (normalizeEventTypeName(event.type) === 'visible body') return true;
+  if (selectedTypeNames.length === 0) return false;
+
+  const eventType = normalizeEventTypeName(event.type);
+  const selectedAliases = selectedTypeNames.flatMap((typeName) => [...getEventTypeAliases(typeName)]);
+
+  return selectedAliases.some((selectedType) => eventType === selectedType);
+}
+
 const CalendarBackdrop = memo(function CalendarBackdrop() {
   return (
     <>
@@ -139,6 +166,8 @@ export default function CalendarScreen() {
   const [locationNotice, setLocationNotice] = useState('Requesting browser location for visible sky events.');
   const [selectedEvent, setSelectedEvent] = useState<EventListItem | null>(null);
   const [activeFilter, setActiveFilter] = useState(ALL_EVENT_FILTER);
+  const [selectedProfileEventTypes, setSelectedProfileEventTypes] = useState<string[]>([]);
+  const [didLoadProfileEventTypes, setDidLoadProfileEventTypes] = useState(false);
   const userId = getUser()?.user_id ?? null;
   const { events: sharedEvents, isLoading: sharedEventsLoading, error: sharedEventsError } = useSharedEvents();
 
@@ -164,6 +193,11 @@ export default function CalendarScreen() {
     return [...sharedCalendarEvents, ...visibleBodyEvents];
   }, [sharedEvents, visibleBodyEvents]);
 
+  const userFilteredEvents = useMemo(() => {
+    if (!getToken() || !didLoadProfileEventTypes) return events;
+    return events.filter((event) => eventMatchesSelectedTypes(event, selectedProfileEventTypes));
+  }, [didLoadProfileEventTypes, events, selectedProfileEventTypes]);
+
   const isLoading = sharedEventsLoading || visibleBodyEventsLoading;
   const error = sharedEventsError ?? (events.length === 0 ? visibleBodyEventsError : null);
 
@@ -171,7 +205,7 @@ export default function CalendarScreen() {
     const extraTypes: string[] = [];
     const seen = new Set<string>(EVENT_FILTER_OPTIONS);
 
-    for (const event of events) {
+    for (const event of userFilteredEvents) {
       const type = event.type ?? 'Event';
       if (seen.has(type)) continue;
       seen.add(type);
@@ -179,7 +213,41 @@ export default function CalendarScreen() {
     }
 
     return [...EVENT_FILTER_OPTIONS, ...extraTypes];
-  }, [events]);
+  }, [userFilteredEvents]);
+
+  useEffect(() => {
+    if (!getToken()) {
+      setDidLoadProfileEventTypes(true);
+      setSelectedProfileEventTypes([]);
+      return;
+    }
+
+    let cancelled = false;
+
+    Promise.all([
+      eventTypesAPI.getEventTypes(),
+      getUserEventTypes(),
+    ])
+      .then(([eventTypes, userEventTypes]) => {
+        if (cancelled) return;
+        const selectedIds = new Set(userEventTypes.eventTypeIds ?? []);
+        setSelectedProfileEventTypes(
+          eventTypes
+            .filter((eventType) => selectedIds.has(eventType.event_type_id))
+            .map((eventType) => eventType.event_type)
+        );
+      })
+      .catch(() => {
+        if (!cancelled) setSelectedProfileEventTypes([]);
+      })
+      .finally(() => {
+        if (!cancelled) setDidLoadProfileEventTypes(true);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -212,7 +280,10 @@ export default function CalendarScreen() {
     };
   }, []);
 
-  const filteredEvents = useMemo(() => filterEvents(events, activeFilter), [events, activeFilter]);
+  const filteredEvents = useMemo(
+    () => filterEvents(userFilteredEvents, activeFilter),
+    [activeFilter, userFilteredEvents]
+  );
 
   const selectedDayEvents = useMemo(
     () => getCalendarEventsForDate(filteredEvents, selectedDate),
