@@ -20,6 +20,7 @@ const SMALL_BODY_TIMELINE_FUTURE_LIMIT = 60;
 const METEOR_SHOWER_EVENT_TYPE = "Meteor Shower";
 let eventsRefreshBlockedUntil = 0;
 const smallBodyRefreshes = new Map();
+const timelineRefreshes = new Map();
 
 function mapCachedEvent(row) {
   const videoUrls = parseUrlList(row.video_url);
@@ -217,11 +218,22 @@ async function getSpacewalks({ limit = 5, fromDate, toDate } = {}) {
 async function getUpcomingList() {
   const now = new Date();
   const nextYear = new Date(now.getTime() + 365 * 24 * 60 * 60 * 1000);
-  await refreshExternalEventsForWindow({
+  const refreshWindow = {
     fromDate: now.toISOString(),
     toDate: nextYear.toISOString(),
-  });
+  };
+  const cached = await buildUpcomingListFromCache(now, nextYear);
 
+  if (cached.length > 0) {
+    queueRefreshExternalEventsForWindow(refreshWindow);
+    return cached;
+  }
+
+  await refreshExternalEventsForWindow(refreshWindow);
+  return buildUpcomingListFromCache(now, nextYear);
+}
+
+async function buildUpcomingListFromCache(now, nextYear) {
   const [events, launches] = await Promise.all([
     eventQueries.getUpcomingNonLaunchEvents(),
     launchQueries.getUpcomingLaunches(),
@@ -297,11 +309,22 @@ async function getTimelineList({ includePast = false, pastDays = 365, futureDays
   const now = new Date();
   const windowStart = new Date(now.getTime() - pastDays * 24 * 60 * 60 * 1000);
   const windowEnd = new Date(now.getTime() + futureDays * 24 * 60 * 60 * 1000);
-  await refreshExternalEventsForWindow({
+  const refreshWindow = {
     fromDate: windowStart.toISOString(),
     toDate: windowEnd.toISOString(),
-  });
+  };
+  const cached = await buildTimelineListFromCache({ windowStart, windowEnd, now });
 
+  if (cached.length > 0) {
+    queueRefreshExternalEventsForWindow(refreshWindow);
+    return cached;
+  }
+
+  await refreshExternalEventsForWindow(refreshWindow);
+  return buildTimelineListFromCache({ windowStart, windowEnd, now });
+}
+
+async function buildTimelineListFromCache({ windowStart, windowEnd, now }) {
   const [events, launches] = await Promise.all([
     eventQueries.getNonLaunchEventsInWindow({
       fromDate: windowStart.toISOString(),
@@ -378,6 +401,21 @@ async function getTimelineList({ includePast = false, pastDays = 365, futureDays
 }
 
 module.exports = { getEvents, getSpacewalks, getUpcomingList, getTimelineList };
+
+function queueRefreshExternalEventsForWindow({ fromDate, toDate }) {
+  const key = `${toDateKey(fromDate)}|${toDateKey(toDate)}`;
+  if (timelineRefreshes.has(key)) return;
+
+  const refresh = refreshExternalEventsForWindow({ fromDate, toDate })
+    .catch((error) => {
+      console.warn("Background event timeline refresh failed:", error.message);
+    })
+    .finally(() => {
+      timelineRefreshes.delete(key);
+    });
+
+  timelineRefreshes.set(key, refresh);
+}
 
 async function refreshExternalEventsForWindow({ fromDate, toDate }) {
   const cachedAt = await eventQueries.getLatestCachedAt({ fromDate, toDate });

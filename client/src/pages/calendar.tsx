@@ -9,7 +9,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Palette, Radius, Spacing } from '@/constants/tokens';
 import { useSharedEvents } from '@/context/events-context';
-import { useCalendarEvents } from '@/hooks/use-calendar-events';
+import { useVisibleBodyEvents } from '@/hooks/use-visible-body-events';
 import { ALL_EVENT_FILTER, EVENT_FILTER_OPTIONS, filterEvents, getEventIconByType } from '@/lib/event-icons';
 import { getEventEmoji } from '@/lib/event-colors';
 import type { EventListItem } from '@/lib/events-api';
@@ -140,6 +140,7 @@ export default function CalendarScreen() {
   const [selectedEvent, setSelectedEvent] = useState<EventListItem | null>(null);
   const [activeFilter, setActiveFilter] = useState(ALL_EVENT_FILTER);
   const userId = getUser()?.user_id ?? null;
+  const { events: sharedEvents, isLoading: sharedEventsLoading, error: sharedEventsError } = useSharedEvents();
 
   const calendarQuery = useMemo(() => {
     return {
@@ -150,7 +151,21 @@ export default function CalendarScreen() {
     };
   }, [browserCoords, loadedWindow.fromDate, loadedWindow.toDate]);
 
-  const { events, isLoading, error } = useCalendarEvents(calendarQuery);
+  const {
+    events: visibleBodyEvents,
+    isLoading: visibleBodyEventsLoading,
+    error: visibleBodyEventsError,
+  } = useVisibleBodyEvents(calendarQuery);
+
+  const events = useMemo(() => {
+    const sharedCalendarEvents = sharedEvents
+      .map((event, index) => eventListItemToCalendarEvent(event, index))
+      .filter((event): event is CalendarEvent => event !== null);
+    return [...sharedCalendarEvents, ...visibleBodyEvents];
+  }, [sharedEvents, visibleBodyEvents]);
+
+  const isLoading = sharedEventsLoading || visibleBodyEventsLoading;
+  const error = sharedEventsError ?? (events.length === 0 ? visibleBodyEventsError : null);
 
   const filterOptions = useMemo(() => {
     const extraTypes: string[] = [];
@@ -220,6 +235,7 @@ export default function CalendarScreen() {
   function setDisplayedMonth(year: number, month: number) {
     setCurrentYear(year);
     setCurrentMonth(month);
+    setLoadedWindow(getCalendarFetchWindow(year, month));
   }
 
   function handlePreviousMonth() {

@@ -659,6 +659,23 @@ export async function fetchCalendarEvents(input?: number | CalendarEventsQuery):
   return dedupeCalendarEvents(allEvents);
 }
 
+export async function fetchVisibleBodyCalendarEvents(input?: CalendarEventsQuery): Promise<CalendarEvent[]> {
+  const { fromDate, toDate, latitude, longitude, includeVisibleBodies = true } = buildCalendarQuery(input);
+  const hasCoordinates =
+    typeof latitude === 'number' &&
+    Number.isFinite(latitude) &&
+    typeof longitude === 'number' &&
+    Number.isFinite(longitude);
+
+  if (!hasCoordinates || !includeVisibleBodies) return [];
+
+  const bodiesUrl = `${ASTRONOMY_BODIES_URL}?latitude=${latitude}&longitude=${longitude}` +
+    `&from_date=${fromDate}&to_date=${toDate}`;
+  const bodiesData = await fetchOptionalCalendarSource<BodiesResponse>(bodiesUrl, 'visible bodies');
+
+  return toBodyCalendarEvents(bodiesData?.results ?? []);
+}
+
 export async function fetchNextUpcomingLaunch(now = new Date()): Promise<UpcomingLaunch | null> {
   const launchesParams = new URLSearchParams({
     limit: '1',
