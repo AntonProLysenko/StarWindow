@@ -238,10 +238,13 @@ async function buildUpcomingListFromCache(now, nextYear) {
     eventQueries.getUpcomingNonLaunchEvents(),
     launchQueries.getUpcomingLaunches(),
   ]);
-  const meteorShowers = await attachSavedEventIdsToMeteorShowers(meteorService.getMeteorShowers({
-    fromDate: now.toISOString(),
-    toDate: nextYear.toISOString(),
-  }).results);
+  const meteorShowers = await attachSavedEventIdsToMeteorShowers(
+    meteorService.getMeteorShowers({
+      fromDate: now.toISOString(),
+      toDate: nextYear.toISOString(),
+    }).results,
+    events
+  );
 
   const normalizedEvents = events.filter((e) => !isMeteorShowerEventType(e.event_type)).map((e) => ({
     id: e.event_id,
@@ -337,10 +340,13 @@ async function buildTimelineListFromCache({ windowStart, windowEnd, now }) {
       limit: 400,
     }),
   ]);
-  const meteorShowers = await attachSavedEventIdsToMeteorShowers(meteorService.getMeteorShowers({
-    fromDate: windowStart.toISOString(),
-    toDate: windowEnd.toISOString(),
-  }).results);
+  const meteorShowers = await attachSavedEventIdsToMeteorShowers(
+    meteorService.getMeteorShowers({
+      fromDate: windowStart.toISOString(),
+      toDate: windowEnd.toISOString(),
+    }).results,
+    events
+  );
 
   const timelineEvents = limitSmallBodyTimelineEvents(
     events.filter((e) => !isMeteorShowerEventType(e.event_type)),
@@ -512,10 +518,42 @@ function isSmallBodyEventType(type) {
   return SMALL_BODY_EVENT_TYPES.includes(String(type || ""));
 }
 
-async function attachSavedEventIdsToMeteorShowers(meteorShowers) {
+/**
+ * Attach the events.event_id each meteor shower is stored under, so the client
+ * can save it like any other event.
+ *
+ * The showers themselves are static (MAJOR_SHOWERS in meteorService), and their
+ * rows are already in the caller's cached-event list — so the id is resolved in
+ * memory. saveEvent() is only called for a shower with no row yet (first run, or
+ * a year rolling into the window), which keeps this off the per-request path:
+ * writing all of them on every request cost ~7.4s of a ~8s response.
+ *
+ * @param {object[]} meteorShowers - meteorService.getMeteorShowers().results
+ * @param {object[]} cachedEvents - rows from getUpcomingNonLaunchEvents /
+ *   getNonLaunchEventsInWindow; meteor-shower rows among them supply the ids
+ * @returns {Promise<object[]>} showers with `id`/`event_id` set where known
+ */
+async function attachSavedEventIdsToMeteorShowers(meteorShowers, cachedEvents = []) {
+  const idByNaturalKey = new Map();
+
+  for (const row of cachedEvents) {
+    if (!isMeteorShowerEventType(row.event_type)) continue;
+    const key = meteorShowerNaturalKey(row.name, row.start_time);
+    // Those queries are DISTINCT ON (name, start_time) keeping the lowest
+    // event_id, so duplicate rows resolve to one id deterministically.
+    if (key && !idByNaturalKey.has(key)) idByNaturalKey.set(key, row.event_id);
+  }
+
   const persisted = [];
 
   for (const shower of meteorShowers) {
+    const cachedId = idByNaturalKey.get(meteorShowerNaturalKey(shower.name, shower.date));
+
+    if (cachedId != null) {
+      persisted.push({ ...shower, id: cachedId, event_id: cachedId });
+      continue;
+    }
+
     try {
       const saved = await eventQueries.saveEvent({
         name: shower.name,
@@ -543,6 +581,17 @@ async function attachSavedEventIdsToMeteorShowers(meteorShowers) {
   }
 
   return persisted;
+}
+
+/**
+ * Key matching saveEvent's natural key for showers (case-insensitive name +
+ * exact start_time); returns null when either half is missing.
+ */
+function meteorShowerNaturalKey(name, startTime) {
+  if (!name || !startTime) return null;
+  const time = new Date(startTime).getTime();
+  if (Number.isNaN(time)) return null;
+  return `${String(name).toLowerCase()}|${time}`;
 }
 
 function isMeteorShowerEventType(type) {
