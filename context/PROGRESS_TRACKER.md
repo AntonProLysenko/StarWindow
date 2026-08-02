@@ -37,7 +37,9 @@ The app is feature-complete as a first pass (dashboard, events, calendar, map, p
 
 ### 4. Responsive design ⏳
 - ✅ Shared `Breakpoints` constant added to `tokens.ts` (tablet 768 / desktop 1024) — not yet consumed
+- ✅ Events filter bar wraps instead of clipping (2026-08-01) — `app/events.tsx` rendered its type pills in a horizontal `ScrollView`, so with ~14 filters the row ran off the right edge of the page. Swapped to a `View` with `flexDirection: 'row'` + `flexWrap: 'wrap'`, matching the pattern `pages/calendar.tsx` already used for the identical pill bar. Verified at 1280px (2 rows) and 375px (7 rows), all pills reachable
 - ⏳ Only `pages/calendar.tsx` adapts to width (`useWindowDimensions`); dashboard, events, profile, map assume desktop
+- 📝 **`dvw()` as a max-width is wrong at mobile widths** (found 2026-08-01 while screenshotting events at 375px). `dvw(n)` emits a *viewport-relative* unit, so `maxWidth: dvw(800)` = `55.5dvw` — it caps the events list at ~208px on a 375px screen, squeezing cards until titles/locations truncate. It reads like an 800px cap but isn't. Same pattern to audit anywhere `dvw()` is used for a `maxWidth`/`width` cap; folds into the `responsive-dimensions` portability item below
 - ⏳ `AppSidebar` is always visible when logged in — needs a collapse/drawer behavior at narrow widths
 - ⏳ `login`/`signup` read `Dimensions.get('window')` at call time without subscribing to changes — switch to `useWindowDimensions`
 - ⏳ Audit fixed pixel widths in dashboard preview cards and event cards at mobile sizes
@@ -80,6 +82,15 @@ Recorded here so future sessions don't rediscover them. **No fixes have been wri
 ---
 
 ## Completed
+
+**Events list performance — 8s → 0.4s (2026-08-01):**
+- ✅ `GET /api/events/list` took ~8s on every load. The cache was working (no external API calls), but `attachSavedEventIdsToMeteorShowers` in `services/eventService.js` called `eventQueries.saveEvent()` **per meteor shower, sequentially, on every request** — 18 showers × a 5-round-trip transaction (BEGIN → upsertEventType → findEventByNaturalKey → updateEvent → COMMIT) ≈ 413ms each = **7.4s of the 8s**. A GET handler was doing ~90 DB writes and bumping `updated_at` on 18 rows per page load.
+- Root cause: the loop existed only to resolve each shower's `event_id`, but those rows were **already in memory** — `getNonLaunchEventsInWindow` / `getUpcomingNonLaunchEvents` return them, and the builders then discarded them via `isMeteorShowerEventType`. The shower definitions themselves are static (`MAJOR_SHOWERS` in `meteorService.js`), so nothing needed writing.
+- Fix: `attachSavedEventIdsToMeteorShowers(showers, cachedEvents)` builds a natural-key map (`lower(name)|start_time`, mirroring `findEventByNaturalKey`) from the already-fetched rows and resolves ids in memory. `saveEvent()` now runs **only** for a shower with no row yet (first run, or a new year entering the window). Both call sites (`buildTimelineListFromCache`, `buildUpcomingListFromCache`) pass their `events` array.
+- Measured: **8.0s → 0.38s warm / 0.99s cold**; queries per request ~92 → 2–4; **writes 0**. Verified identical output by A/B against the unpatched running server: 440 items both, 0 items only-in-old/only-in-new, **0 differing fields**, same ordering. All 18 showers keep an `event_id`, stable across calls; `getUpcomingList` likewise (9 showers, 0 missing).
+- ⚠️ Behavior note: existing shower rows are no longer rewritten on each request, so if the curated `MAJOR_SHOWERS` data is edited (description/image/URL), already-persisted rows keep the old values. Only matters for saved events on the profile screen, which read the DB row. Delete the affected `events` rows to force a re-fill if the curated list changes.
+- File: `server/services/eventService.js`. No client or schema change.
+- ⏳ Not done, deliberately deferred (both dwarfed by the above, worth revisiting now it's fixed): the response is 436KB for a ±365-day window, and `/api/events/list` sends no `Cache-Control`/`ETag`, so every revisit refetches in full.
 
 **Security quick-wins batch (2026-07-25):** audit items #5 (DB SSL, opt-in verification + warning), #6 (login enumeration: unified message + constant-time compare), #8 (error responses no longer leak `err.message`/`err.code`), #9 (removed PII/debug logging), #11 (housekeeping: nodemon→devDeps, removed body-parser + dead `express.static("build")` + unused imports + duplicate `/signup` route). Files: `server/config/database.js`, `server/server.js`, `server/controllers/api/users.js`, `server/models/user.js`, `server/routes/api/users.js`, `server/package.json`. 
 

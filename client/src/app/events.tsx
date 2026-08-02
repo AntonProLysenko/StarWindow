@@ -18,7 +18,7 @@ import { useLocalSearchParams } from 'expo-router';
 
 import { EventCard } from '@/components/events/event-card';
 import { EventModal } from '@/components/events/event-modal';
-import { Palette, Radius } from '@/constants/tokens';
+import { Palette, Radius, Spacing } from '@/constants/tokens';
 import { useSharedEvents } from '@/context/events-context';
 import { getEventEmoji } from '@/lib/event-colors';
 import { fetchSavedUserEvents, type EventListItem } from '@/lib/events-api';
@@ -437,13 +437,10 @@ export default function EventsScreen() {
         <Text style={styles.title}>Events</Text>
       </View>
 
-      {/* Filter bar — hidden until we have data to derive types from. */}
+      {/* Filter bar — hidden until we have data to derive types from.
+          Wraps onto additional rows rather than scrolling off-screen. */}
       {!loading && !error && events.length > 0 && (
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={styles.filterBar}
-          contentContainerStyle={styles.filterBarContent}>
+        <View style={styles.filterBar}>
           {filterOptions.map((option) => {
             const active = option === activeType;
             return (
@@ -463,7 +460,7 @@ export default function EventsScreen() {
               </Pressable>
             );
           })}
-        </ScrollView>
+        </View>
       )}
 
       {loading ? (
@@ -573,12 +570,11 @@ const styles = StyleSheet.create({
     color: Palette.textPrimary,
   },
   filterBar: {
-    flexGrow: 0,
-    paddingHorizontal: 24,
-  },
-  filterBarContent: {
-    gap: 8,
-    paddingVertical: 12,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing.sm,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.sm,
   },
   filterPill: {
     paddingVertical: 7,
