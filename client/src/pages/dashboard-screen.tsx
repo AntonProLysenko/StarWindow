@@ -14,6 +14,7 @@ import {
   SafeAreaView,
   Image,
   Linking,
+  Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import * as Location from 'expo-location';
@@ -1581,6 +1582,11 @@ function GeneratedMoonPhase({
   }
 
   const phaseKey = getMoonPhaseKey(phaseName, illumination, phaseAngle, phaseTrend);
+
+  if (Platform.OS === 'web') {
+    return <GeneratedMoonPhaseSvg phaseKey={phaseKey} />;
+  }
+
   const shadeCircleStyle = getMoonShadeCircleStyle(phaseKey);
   const lightCircleStyle = getMoonLightCircleStyle(phaseKey);
 
@@ -1855,6 +1861,86 @@ function BodiesThumb({ bodies, isLoading }: { bodies: VisibleBody[]; isLoading: 
       </View>
     </View>
   );
+}
+
+function GeneratedMoonPhaseSvg({ phaseKey }: { phaseKey: string }) {
+  const litShapes = getMoonSvgLitShapes(phaseKey);
+
+  return React.createElement(
+    'svg',
+    {
+      viewBox: '0 0 100 100',
+      width: '100%',
+      height: '100%',
+      role: 'img',
+      'aria-hidden': true,
+      style: { display: 'block' },
+    },
+    React.createElement(
+      'defs',
+      null,
+      React.createElement('clipPath', { id: 'generated-moon-disc' }, React.createElement('circle', { cx: 50, cy: 50, r: 50 })),
+      React.createElement(
+        'radialGradient',
+        { id: 'generated-moon-glow', cx: '38%', cy: '34%', r: '70%' },
+        React.createElement('stop', { offset: '0%', stopColor: Palette.moonLit }),
+        React.createElement('stop', { offset: '100%', stopColor: '#B8C4CF' })
+      )
+    ),
+    React.createElement('circle', { cx: 50, cy: 50, r: 50, fill: Palette.moonShadow }),
+    React.createElement(
+      'g',
+      { clipPath: 'url(#generated-moon-disc)' },
+      ...litShapes,
+      React.createElement('circle', { cx: 62, cy: 32, r: 9, fill: alpha(Palette.textMuted, 0.22), stroke: alpha(Palette.textMuted, 0.24) }),
+      React.createElement('circle', { cx: 38, cy: 60, r: 6, fill: alpha(Palette.textMuted, 0.22), stroke: alpha(Palette.textMuted, 0.24) }),
+      React.createElement('circle', { cx: 66, cy: 66, r: 4, fill: alpha(Palette.textMuted, 0.22), stroke: alpha(Palette.textMuted, 0.24) })
+    ),
+    React.createElement('circle', {
+      cx: 50,
+      cy: 50,
+      r: 49.4,
+      fill: 'none',
+      stroke: alpha(Palette.textPrimary, 0.26),
+      strokeWidth: 1.2,
+    })
+  );
+}
+
+function getMoonSvgLitShapes(phaseKey: string) {
+  const lightFill = 'url(#generated-moon-glow)';
+  const shadowFill = Palette.moonShadow;
+
+  if (phaseKey === 'new') return [];
+  if (phaseKey === 'full') return [React.createElement('circle', { key: 'full', cx: 50, cy: 50, r: 50, fill: lightFill })];
+  if (phaseKey === 'first-quarter') return [React.createElement('rect', { key: 'first', x: 50, y: 0, width: 50, height: 100, fill: lightFill })];
+  if (phaseKey === 'third-quarter') return [React.createElement('rect', { key: 'third', x: 0, y: 0, width: 50, height: 100, fill: lightFill })];
+  if (phaseKey === 'waxing-crescent') {
+    return [
+      React.createElement('circle', { key: 'light', cx: 50, cy: 50, r: 50, fill: lightFill }),
+      React.createElement('circle', { key: 'shade', cx: 32, cy: 50, r: 50, fill: shadowFill }),
+    ];
+  }
+  if (phaseKey === 'waning-crescent') {
+    return [
+      React.createElement('circle', { key: 'light', cx: 50, cy: 50, r: 50, fill: lightFill }),
+      React.createElement('circle', { key: 'shade', cx: 68, cy: 50, r: 50, fill: shadowFill }),
+    ];
+  }
+  if (phaseKey === 'waxing-gibbous') {
+    return [
+      React.createElement('rect', { key: 'half', x: 50, y: 0, width: 50, height: 100, fill: lightFill }),
+      React.createElement('circle', { key: 'light', cx: 32, cy: 50, r: 50, fill: lightFill }),
+    ];
+  }
+  if (phaseKey === 'waning-gibbous') {
+    return [
+      React.createElement('rect', { key: 'half', x: 0, y: 0, width: 50, height: 100, fill: lightFill }),
+      React.createElement('circle', { key: 'light', cx: 68, cy: 50, r: 50, fill: lightFill }),
+    ];
+  }
+
+  return [];
 }
 
 function MeteorThumb({
