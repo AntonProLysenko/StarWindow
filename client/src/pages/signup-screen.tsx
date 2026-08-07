@@ -10,6 +10,7 @@ import {
   Animated,
   Dimensions,
   Image,
+  ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Audio } from 'expo-av';
@@ -79,10 +80,10 @@ export default function SignUpScreen() {
   const isSmall = screen.width < 380;
   const isMedium = screen.width < 768;
   const isShort = screen.height < 740;
-  const logoSize = isShort ? 64 : isSmall ? 76 : isMedium ? 92 : 104;
-  const titleSize = isShort ? 28 : isSmall ? 30 : isMedium ? 34 : 38;
-  const inputPad = isShort ? 8 : isSmall ? 10 : 12;
-  const cardPad = isShort ? 12 : isSmall ? 14 : 18;
+  const logoSize = isMedium ? (isShort ? 52 : isSmall ? 64 : 76) : 104;
+  const titleSize = isMedium ? (isShort ? 28 : isSmall ? 31 : 34) : 38;
+  const inputPad = isMedium ? 13 : isShort ? 8 : isSmall ? 10 : 12;
+  const cardPad = isMedium ? 18 : isShort ? 12 : isSmall ? 14 : 18;
   const passwordMismatch = confirm.length > 0 && password !== confirm;
 
   const handleToggleSound = async () => {
@@ -231,8 +232,12 @@ export default function SignUpScreen() {
         />
       </TouchableOpacity>
 
-      <View style={styles.inner}>
-        <View style={styles.centerWrapper}>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={[styles.inner, isMedium && styles.innerMobile]}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}>
+        <View style={[styles.centerWrapper, isMedium && styles.centerWrapperMobile]}>
           <Image
             source={require('@/assets/images/logo_starwindow.png')}
             style={{
@@ -244,9 +249,9 @@ export default function SignUpScreen() {
           />
 
           <Text style={[styles.appName, { fontSize: titleSize }]}>StarWindow</Text>
-          <Text style={styles.tagline}>Your personal guide to the night sky</Text>
+          <Text style={[styles.tagline, isMedium && styles.taglineMobile]}>Your personal guide to the night sky</Text>
 
-          <View style={[styles.card, { padding: cardPad }]}>
+          <View style={[styles.card, isMedium && styles.cardMobile, { padding: cardPad }]}>
             {showEventTypes ? (
               <>
                 <Text style={styles.stepTitle}>Choose Event Types</Text>
@@ -255,7 +260,7 @@ export default function SignUpScreen() {
                 {isLoadingEventTypes ? (
                   <Text style={styles.loadingText}>Loading event types...</Text>
                 ) : (
-                  <View style={styles.eventTypeList}>
+                  <View style={[styles.eventTypeList, isMedium && styles.eventTypeListMobile]}>
                     {eventTypes.map((eventType) => {
                       const selected = selectedEventTypeIds.includes(eventType.event_type_id);
                       return (
@@ -263,7 +268,7 @@ export default function SignUpScreen() {
                           key={eventType.event_type_id}
                           onPress={() => toggleEventType(eventType.event_type_id)}
                           activeOpacity={0.8}
-                          style={[styles.eventTypeOption, selected && styles.eventTypeOptionSelected]}
+                          style={[styles.eventTypeOption, isMedium && styles.eventTypeOptionMobile, selected && styles.eventTypeOptionSelected]}
                         >
                           <Text style={[styles.eventTypeText, selected && styles.eventTypeTextSelected]}>
                             {eventType.event_type}
@@ -290,7 +295,7 @@ export default function SignUpScreen() {
                       (isSavingEventTypes || isLoadingEventTypes) && styles.disabledButton,
                     ]}
                   >
-                    <Text style={styles.signInText}>
+                    <Text style={[styles.signInText, isMedium && styles.signInTextMobile]}>
                       {isSavingEventTypes ? 'SAVING...' : 'CONTINUE'}
                     </Text>
                   </Animated.View>
@@ -299,7 +304,7 @@ export default function SignUpScreen() {
             ) : (
               <>
                 <TextInput
-                  style={[styles.input, { padding: inputPad }]}
+                  style={[styles.input, isMedium && styles.inputMobile, { padding: inputPad }]}
                   placeholder="First Name"
                   placeholderTextColor={Palette.textTertiary}
                   value={firstName}
@@ -311,7 +316,7 @@ export default function SignUpScreen() {
                 />
 
                 <TextInput
-                  style={[styles.input, { padding: inputPad }]}
+                  style={[styles.input, isMedium && styles.inputMobile, { padding: inputPad }]}
                   placeholder="Last Name"
                   placeholderTextColor={Palette.textTertiary}
                   value={lastName}
@@ -323,7 +328,7 @@ export default function SignUpScreen() {
                 />
 
                 <TextInput
-                  style={[styles.input, { padding: inputPad }]}
+                  style={[styles.input, isMedium && styles.inputMobile, { padding: inputPad }]}
                   placeholder="Email"
                   placeholderTextColor={Palette.textTertiary}
                   value={email}
@@ -338,7 +343,7 @@ export default function SignUpScreen() {
 
                 <View style={styles.passwordInputWrap}>
                   <TextInput
-                    style={[styles.passwordTextInput, { padding: inputPad }]}
+                    style={[styles.passwordTextInput, isMedium && styles.inputMobile, { padding: inputPad }]}
                     placeholder="Password"
                     placeholderTextColor={Palette.textTertiary}
                     value={password}
@@ -367,7 +372,7 @@ export default function SignUpScreen() {
 
                 <View style={styles.passwordInputWrap}>
                   <TextInput
-                    style={[styles.passwordTextInput, { padding: inputPad }]}
+                    style={[styles.passwordTextInput, isMedium && styles.inputMobile, { padding: inputPad }]}
                     placeholder="Repeat Password"
                     placeholderTextColor={Palette.textTertiary}
                     value={confirm}
@@ -408,7 +413,7 @@ export default function SignUpScreen() {
                       (isSubmitting || passwordMismatch) && styles.disabledButton,
                     ]}
                   >
-                    <Text style={styles.signInText}>{isSubmitting ? 'SIGNING UP...' : 'SIGN UP'}</Text>
+                    <Text style={[styles.signInText, isMedium && styles.signInTextMobile]}>{isSubmitting ? 'SIGNING UP...' : 'SIGN UP'}</Text>
                   </Animated.View>
                 </TouchableOpacity>
 
@@ -429,7 +434,7 @@ export default function SignUpScreen() {
                   activeOpacity={1}
                 >
                   <Animated.View style={[styles.newUserButton, { borderColor: newUserBorderColor }]}>
-                    <Text style={styles.newUserText}>Log in</Text>
+                    <Text style={[styles.newUserText, isMedium && styles.newUserTextMobile]}>Log in</Text>
                   </Animated.View>
                 </TouchableOpacity>
               </>
@@ -438,7 +443,7 @@ export default function SignUpScreen() {
 
           <Text style={styles.footer}>*   *   *</Text>
         </View>
-      </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -468,8 +473,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  inner: {
+  scroll: {
     flex: 1,
+    width: '100%',
+  },
+  inner: {
+    flexGrow: 1,
     width: '100%',
     alignItems: 'center',
     justifyContent: 'center',
@@ -477,12 +486,23 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     overflow: 'hidden',
   },
+  innerMobile: {
+    justifyContent: 'flex-start',
+    paddingTop: 52,
+    paddingBottom: 28,
+    paddingHorizontal: 18,
+    overflow: 'visible',
+  },
   centerWrapper: {
     width: '100%',
     maxWidth: dvw(420),
     maxHeight: '100%',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  centerWrapperMobile: {
+    maxWidth: 440,
+    justifyContent: 'flex-start',
   },
   appName: {
     fontWeight: '900',
@@ -500,6 +520,12 @@ const styles = StyleSheet.create({
     letterSpacing: 1.5,
     textAlign: 'center',
   },
+  taglineMobile: {
+    fontSize: 11,
+    lineHeight: 16,
+    letterSpacing: 0.6,
+    marginBottom: 14,
+  },
   card: {
     width: '100%',
     backgroundColor: Palette.bgDeep,
@@ -511,6 +537,9 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 24,
   },
+  cardMobile: {
+    borderRadius: Radius.md,
+  },
   input: {
     backgroundColor: Palette.surface,
     borderWidth: 1,
@@ -519,6 +548,10 @@ const styles = StyleSheet.create({
     color: Palette.textSecondary,
     fontSize: 13,
     marginBottom: 8,
+  },
+  inputMobile: {
+    minHeight: 47,
+    fontSize: 15,
   },
   passwordInputWrap: {
     flexDirection: 'row',
@@ -566,6 +599,9 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     marginBottom: 12,
   },
+  eventTypeListMobile: {
+    gap: 8,
+  },
   eventTypeOption: {
     borderWidth: 1,
     borderColor: Palette.border,
@@ -575,6 +611,12 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     marginRight: 8,
     marginBottom: 8,
+  },
+  eventTypeOptionMobile: {
+    flexGrow: 1,
+    marginRight: 0,
+    marginBottom: 0,
+    alignItems: 'center',
   },
   eventTypeOptionSelected: {
     borderColor: Palette.accent,
@@ -609,6 +651,10 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     letterSpacing: 4,
   },
+  signInTextMobile: {
+    fontSize: 14,
+    letterSpacing: 2,
+  },
   errorText: {
     color: Palette.accentRed,
     fontSize: 11,
@@ -641,6 +687,9 @@ const styles = StyleSheet.create({
     color: Palette.accentMuted,
     fontSize: 12,
     letterSpacing: 1,
+  },
+  newUserTextMobile: {
+    fontSize: 13,
   },
   footer: {
     color: Palette.border,

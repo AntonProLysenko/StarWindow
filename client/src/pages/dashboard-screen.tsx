@@ -14,11 +14,11 @@ import {
   SafeAreaView,
   Image,
   Linking,
-  Platform,
+  useWindowDimensions,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import * as Location from 'expo-location';
-import { Palette, Radius, Spacing, alpha } from '@/constants/tokens';
+import { Breakpoints, Palette, Radius, Spacing, alpha } from '@/constants/tokens';
 import { ShootingStar } from '@/components/shooting-star';
 import { SoundToggle } from '@/components/sound-toggle';
 import { MonthGrid } from '@/components/calendar/month-grid';
@@ -672,7 +672,9 @@ type DashboardScreenProps = {
 
 export default function DashboardScreen({ locked = false }: DashboardScreenProps = {}) {
   const router = useRouter();
+  const { width } = useWindowDimensions();
   const today = new Date();
+  const isMobile = width < Breakpoints.tablet;
   const [user, setUser] = useState<usersService.AuthUser | null>(() => usersService.getUser());
   const isLocked = locked && !user;
   const firstName = getFirstName(user);
@@ -822,7 +824,7 @@ export default function DashboardScreen({ locked = false }: DashboardScreenProps
       try {
         const moon = await fetchMoonPhase(coords);
         if (!isMounted) return;
-        setMoonImageUrl(moon.image_url ?? null);
+        setMoonImageUrl(null);
         setMoonPhasePercent(moon.phase_percent ?? null);
         setMoonPhaseAngle(moon.phase_angle ?? null);
         setMoonPhaseTrend(moon.phase_trend ?? null);
@@ -1016,9 +1018,9 @@ export default function DashboardScreen({ locked = false }: DashboardScreenProps
 
       <View style={styles.body}>
         {/* ---------- MAIN CONTENT ---------- */}
-        <ScrollView style={styles.main} contentContainerStyle={styles.mainContent}>
-          <View style={styles.topBar}>
-            <View>
+        <ScrollView style={styles.main} contentContainerStyle={[styles.mainContent, isMobile && styles.mainContentMobile]}>
+          <View style={[styles.topBar, isMobile && styles.topBarMobile]}>
+            <View style={styles.topBarCopy}>
               <Text style={styles.eyebrow}>
                 {`TONIGHT SKY - ${today.toLocaleDateString('en-US', {
                   weekday: 'short',
@@ -1026,14 +1028,14 @@ export default function DashboardScreen({ locked = false }: DashboardScreenProps
                   day: 'numeric',
                 }).toUpperCase()}`}
               </Text>
-              <Text style={styles.greeting}>
+              <Text style={[styles.greeting, isMobile && styles.greetingMobile]}>
                 {isLocked ? 'Welcome to Star Window' : `${getSkyGreeting(viewingScore, viewingScoreStatus)}, ${firstName}`}
               </Text>
             </View>
             {isLocked ? (
-              <View style={styles.guestTopActions}>
-                <View style={styles.locationChip}>
-                  <Text style={styles.locationChipText}>📍 {locationLabel}</Text>
+              <View style={[styles.guestTopActions, isMobile && styles.guestTopActionsMobile]}>
+                <View style={[styles.locationChip, isMobile && styles.locationChipMobile]}>
+                  <Text style={styles.locationChipText} numberOfLines={1}>📍 {locationLabel}</Text>
                 </View>
                 <Pressable style={styles.topSignInButton} onPress={() => router.push('/login' as any)}>
                   <Text style={styles.topSignInText}>SIGN IN</Text>
@@ -1044,9 +1046,9 @@ export default function DashboardScreen({ locked = false }: DashboardScreenProps
                 <SoundToggle />
               </View>
             ) : (
-              <View style={styles.guestTopActions}>
-                <View style={styles.locationChip}>
-                  <Text style={styles.locationChipText}>📍 {locationLabel}</Text>
+              <View style={[styles.guestTopActions, isMobile && styles.guestTopActionsMobile]}>
+                <View style={[styles.locationChip, isMobile && styles.locationChipMobile]}>
+                  <Text style={styles.locationChipText} numberOfLines={1}>📍 {locationLabel}</Text>
                 </View>
                 <SoundToggle />
               </View>
@@ -1061,7 +1063,7 @@ export default function DashboardScreen({ locked = false }: DashboardScreenProps
           <SectionLabel text="ACCOUNT" /> */}
 
           {!isLocked ? (
-            <Pressable style={styles.profileCard} onPress={() => router.push('/profile')}>
+            <Pressable style={[styles.profileCard, isMobile && styles.profileCardMobile]} onPress={() => router.push('/profile')}>
               <View style={styles.profileRing}>
                 <View style={styles.profileAvatar} />
               </View>
@@ -1069,7 +1071,7 @@ export default function DashboardScreen({ locked = false }: DashboardScreenProps
                 <Text style={styles.previewTitle}>{displayName}</Text>
                 <Text style={styles.previewMeta}>{profileMeta}</Text>
                 {levelProgressLabel ? (
-                  <View style={styles.profileLevelProgress}>
+                  <View style={[styles.profileLevelProgress, isMobile && styles.profileLevelProgressMobile]}>
                     <View style={styles.profileLevelTrack}>
                       <View style={[styles.profileLevelFill, { width: `${levelProgressPercent}%` as any }]} />
                     </View>
@@ -1082,10 +1084,10 @@ export default function DashboardScreen({ locked = false }: DashboardScreenProps
 
 
           {/* ---------- ISS HERO ---------- */}
-          <View style={styles.hero}>
+          <View style={[styles.hero, isMobile && styles.heroMobile]}>
             <View style={styles.heroLeft}>
 
-              <View style={styles.heroNow}>
+              <View style={[styles.heroNow, isMobile && styles.heroNowMobile]}>
                 <View style={styles.pulseDot} />
                 <Text style={styles.heroNowText}>
                   {locationMessage}
@@ -1093,7 +1095,7 @@ export default function DashboardScreen({ locked = false }: DashboardScreenProps
               </View>
 
               <Text style={styles.heroEyebrow}>ISS PASS - LIVE</Text>
-              <Text style={styles.heroTitle}>
+              <Text style={[styles.heroTitle, isMobile && styles.heroTitleMobile]}>
                 {formatIssTitle({
                   isLoading: isIssLoading,
                   error: issError,
@@ -1102,7 +1104,7 @@ export default function DashboardScreen({ locked = false }: DashboardScreenProps
                 })}
               </Text>
 
-              <View style={styles.heroStats}>
+              <View style={[styles.heroStats, isMobile && styles.heroStatsMobile]}>
                 <Stat label="RISE" value={nextIssPass?.rise?.time ? formatIssClock(nextIssPass.rise.time) : '--'} />
                 <Stat label="PEAK" value={nextIssPass?.peak?.elevation_deg != null ? `${Math.round(nextIssPass.peak.elevation_deg)} deg` : '--'} />
                 <Stat label="DURATION" value={formatIssDuration(nextIssPass?.visible_duration_sec ?? nextIssPass?.duration_sec) ?? '--'} />
@@ -1117,7 +1119,7 @@ export default function DashboardScreen({ locked = false }: DashboardScreenProps
               </Text>
             </View>
 
-            <View style={styles.issHeroStage}>
+            <View style={[styles.issHeroStage, isMobile && styles.issHeroStageMobile]}>
               <IssThumb pass={nextIssPass} isLoading={isIssLoading} variant="hero" />
             </View>
           </View>
@@ -1480,14 +1482,17 @@ function PreviewCard({
   fullWidth?: boolean;
 }) {
   const router = useRouter();
+  const { width } = useWindowDimensions();
+  const isMobile = width < Breakpoints.tablet;
   const handlePress = locked ? () => router.push('/signup' as any) : onPress;
+  const metaLineCount = isMobile ? 2 : 3;
 
   return (
     <Pressable
-      style={[styles.previewCard, fullWidth && styles.previewCardFullWidth]}
+      style={[styles.previewCard, fullWidth && styles.previewCardFullWidth, isMobile && styles.previewCardMobile]}
       onPress={handlePress}
       disabled={!handlePress}>
-      <View style={[styles.previewThumb, fullWidth && styles.previewThumbFullWidth]}>
+      <View style={[styles.previewThumb, fullWidth && styles.previewThumbFullWidth, isMobile && styles.previewThumbMobile]}>
         <View style={locked ? styles.lockedThumbContent : styles.previewThumbContent}>
           {thumb}
         </View>
@@ -1501,15 +1506,15 @@ function PreviewCard({
           </View>
         ) : null}
       </View>
-      <View style={styles.previewBody}>
-        <View style={styles.previewEyebrowRow}>
+      <View style={[styles.previewBody, isMobile && styles.previewBodyMobile]}>
+        <View style={[styles.previewEyebrowRow, isMobile && styles.previewEyebrowRowMobile]}>
           <Text style={styles.previewEyebrow}>{eyebrow}</Text>
           <View style={[styles.badge, { backgroundColor: badgeColor + '20' }]}>
             <Text style={[styles.badgeText, { color: badgeColor }]}>{badge}</Text>
           </View>
         </View>
-        <Text style={[styles.previewTitle, locked && styles.lockedPreviewText]} numberOfLines={2}>{title}</Text>
-        <Text style={[styles.previewMeta, locked && styles.lockedPreviewText]} numberOfLines={3}>{keepPipeGroupsTogether(meta)}</Text>
+        <Text style={[styles.previewTitle, isMobile && styles.previewTitleMobile, locked && styles.lockedPreviewText]} numberOfLines={2}>{title}</Text>
+        <Text style={[styles.previewMeta, isMobile && styles.previewMetaMobile, locked && styles.lockedPreviewText]} numberOfLines={metaLineCount}>{keepPipeGroupsTogether(meta)}</Text>
       </View>
     </Pressable>
   );
@@ -1546,16 +1551,12 @@ function MoonThumb({
     <View style={styles.moonThumb}>
       <View style={styles.moonThumbRing} />
       <View style={styles.moonThumbDisc}>
-        {imageUrl ? (
-          <Image source={{ uri: imageUrl }} style={[styles.moonImage, styles.moonImageFromApi]} resizeMode="cover" />
-        ) : (
-          <GeneratedMoonPhase
-            phaseName={phaseName}
-            phasePercent={phasePercent}
-            phaseAngle={phaseAngle}
-            phaseTrend={phaseTrend}
-          />
-        )}
+        <GeneratedMoonPhase
+          phaseName={phaseName}
+          phasePercent={phasePercent}
+          phaseAngle={phaseAngle}
+          phaseTrend={phaseTrend}
+        />
       </View>
       <View style={styles.moonThumbLabel}>
         <Text style={styles.bodyNameText} numberOfLines={1}>{phaseName}</Text>
@@ -1582,11 +1583,6 @@ function GeneratedMoonPhase({
   }
 
   const phaseKey = getMoonPhaseKey(phaseName, illumination, phaseAngle, phaseTrend);
-
-  if (Platform.OS === 'web') {
-    return <GeneratedMoonPhaseSvg phaseKey={phaseKey} />;
-  }
-
   const shadeCircleStyle = getMoonShadeCircleStyle(phaseKey);
   const lightCircleStyle = getMoonLightCircleStyle(phaseKey);
 
@@ -1752,10 +1748,12 @@ function IssThumb({
   isLoading: boolean;
   variant?: 'card' | 'hero';
 }) {
+  const { width } = useWindowDimensions();
+  const isMobile = width < Breakpoints.tablet;
   const duration = formatIssDuration(pass?.visible_duration_sec ?? pass?.duration_sec);
   const passTime = isLoading ? 'Checking orbit...' : pass ? formatIssClock(pass.rise?.time) : 'No pass found';
   const stats = (
-    <View style={[styles.issStatsRow, variant === 'hero' && styles.issHeroStatsRow]}>
+    <View style={[styles.issStatsRow, variant === 'hero' && styles.issHeroStatsRow, variant === 'hero' && isMobile && styles.issHeroStatsRowMobile]}>
       <View style={styles.issStatPill}>
         <Text style={styles.issStatLabel}>RISE</Text>
         <Text style={styles.issStatValue}>{pass?.rise?.direction ?? '--'}</Text>
@@ -1775,13 +1773,13 @@ function IssThumb({
 
   if (variant === 'hero') {
     return (
-      <View style={[styles.issThumb, styles.issHeroThumb]}>
-        <Text style={styles.issHeroPassLabelText}>NEXT VISIBLE PASS</Text>
-        <View style={[styles.issOrbitArc, styles.issHeroOrbitArc]}>
+      <View style={[styles.issThumb, styles.issHeroThumb, isMobile && styles.issHeroThumbMobile]}>
+        <Text style={[styles.issHeroPassLabelText, isMobile && styles.issHeroPassLabelTextMobile]}>NEXT VISIBLE PASS</Text>
+        <View style={[styles.issOrbitArc, styles.issHeroOrbitArc, isMobile && styles.issHeroOrbitArcMobile]}>
           <View style={[styles.issNode, styles.issPeakNode]} />
         </View>
-        <Text style={styles.issHeroClockText}>{passTime}</Text>
-        <View style={[styles.issStation, styles.issHeroStation]}>
+        <Text style={[styles.issHeroClockText, isMobile && styles.issHeroClockTextMobile]}>{passTime}</Text>
+        <View style={[styles.issStation, styles.issHeroStation, isMobile && styles.issHeroStationMobile]}>
           <Image
             source={require('@/assets/images/iss.png')}
             style={styles.issStationIcon}
@@ -1861,86 +1859,6 @@ function BodiesThumb({ bodies, isLoading }: { bodies: VisibleBody[]; isLoading: 
       </View>
     </View>
   );
-}
-
-function GeneratedMoonPhaseSvg({ phaseKey }: { phaseKey: string }) {
-  const litShapes = getMoonSvgLitShapes(phaseKey);
-
-  return React.createElement(
-    'svg',
-    {
-      viewBox: '0 0 100 100',
-      width: '100%',
-      height: '100%',
-      role: 'img',
-      'aria-hidden': true,
-      style: { display: 'block' },
-    },
-    React.createElement(
-      'defs',
-      null,
-      React.createElement('clipPath', { id: 'generated-moon-disc' }, React.createElement('circle', { cx: 50, cy: 50, r: 50 })),
-      React.createElement(
-        'radialGradient',
-        { id: 'generated-moon-glow', cx: '38%', cy: '34%', r: '70%' },
-        React.createElement('stop', { offset: '0%', stopColor: Palette.moonLit }),
-        React.createElement('stop', { offset: '100%', stopColor: '#B8C4CF' })
-      )
-    ),
-    React.createElement('circle', { cx: 50, cy: 50, r: 50, fill: Palette.moonShadow }),
-    React.createElement(
-      'g',
-      { clipPath: 'url(#generated-moon-disc)' },
-      ...litShapes,
-      React.createElement('circle', { cx: 62, cy: 32, r: 9, fill: alpha(Palette.textMuted, 0.22), stroke: alpha(Palette.textMuted, 0.24) }),
-      React.createElement('circle', { cx: 38, cy: 60, r: 6, fill: alpha(Palette.textMuted, 0.22), stroke: alpha(Palette.textMuted, 0.24) }),
-      React.createElement('circle', { cx: 66, cy: 66, r: 4, fill: alpha(Palette.textMuted, 0.22), stroke: alpha(Palette.textMuted, 0.24) })
-    ),
-    React.createElement('circle', {
-      cx: 50,
-      cy: 50,
-      r: 49.4,
-      fill: 'none',
-      stroke: alpha(Palette.textPrimary, 0.26),
-      strokeWidth: 1.2,
-    })
-  );
-}
-
-function getMoonSvgLitShapes(phaseKey: string) {
-  const lightFill = 'url(#generated-moon-glow)';
-  const shadowFill = Palette.moonShadow;
-
-  if (phaseKey === 'new') return [];
-  if (phaseKey === 'full') return [React.createElement('circle', { key: 'full', cx: 50, cy: 50, r: 50, fill: lightFill })];
-  if (phaseKey === 'first-quarter') return [React.createElement('rect', { key: 'first', x: 50, y: 0, width: 50, height: 100, fill: lightFill })];
-  if (phaseKey === 'third-quarter') return [React.createElement('rect', { key: 'third', x: 0, y: 0, width: 50, height: 100, fill: lightFill })];
-  if (phaseKey === 'waxing-crescent') {
-    return [
-      React.createElement('circle', { key: 'light', cx: 50, cy: 50, r: 50, fill: lightFill }),
-      React.createElement('circle', { key: 'shade', cx: 32, cy: 50, r: 50, fill: shadowFill }),
-    ];
-  }
-  if (phaseKey === 'waning-crescent') {
-    return [
-      React.createElement('circle', { key: 'light', cx: 50, cy: 50, r: 50, fill: lightFill }),
-      React.createElement('circle', { key: 'shade', cx: 68, cy: 50, r: 50, fill: shadowFill }),
-    ];
-  }
-  if (phaseKey === 'waxing-gibbous') {
-    return [
-      React.createElement('rect', { key: 'half', x: 50, y: 0, width: 50, height: 100, fill: lightFill }),
-      React.createElement('circle', { key: 'light', cx: 32, cy: 50, r: 50, fill: lightFill }),
-    ];
-  }
-  if (phaseKey === 'waning-gibbous') {
-    return [
-      React.createElement('rect', { key: 'half', x: 0, y: 0, width: 50, height: 100, fill: lightFill }),
-      React.createElement('circle', { key: 'light', cx: 68, cy: 50, r: 50, fill: lightFill }),
-    ];
-  }
-
-  return [];
 }
 
 function MeteorThumb({
@@ -2120,12 +2038,31 @@ const styles = StyleSheet.create({
     maxWidth: dvw(1040),
     alignSelf: 'center',
   },
+  mainContentMobile: {
+    padding: Spacing.md,
+    paddingTop: Spacing.md,
+    paddingBottom: Spacing.lg,
+    gap: Spacing.md,
+    maxWidth: '100%' as any,
+  },
   topBar: {
     marginBottom: 4,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
     gap: Spacing.md,
+  },
+  topBarMobile: {
+    flexDirection: 'column',
+    gap: Spacing.sm,
+  },
+  topBarCopy: {
+    flex: 1,
+    minWidth: dvw(0),
+  },
+  guestTopActionsMobile: {
+    width: '100%',
+    justifyContent: 'space-between',
   },
   eyebrow: {
     fontSize: 11,
@@ -2140,6 +2077,10 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: Palette.textPrimary,
   },
+  greetingMobile: {
+    fontSize: 23,
+    lineHeight: 29,
+  },
   locationChip: {
     backgroundColor: Palette.surface,
     borderWidth: 1,
@@ -2147,6 +2088,10 @@ const styles = StyleSheet.create({
     borderRadius: Radius.pill,
     paddingVertical: 6,
     paddingHorizontal: 10,
+  },
+  locationChipMobile: {
+    flex: 1,
+    minWidth: 0,
   },
   locationChipText: {
     fontSize: 12,
@@ -2160,6 +2105,10 @@ const styles = StyleSheet.create({
     borderRadius: Radius.lg,
     padding: Spacing.lg,
     gap: Spacing.lg,
+  },
+  heroMobile: {
+    padding: Spacing.md,
+    gap: Spacing.md,
   },
   heroLeft: {},
   heroEyebrow: {
@@ -2176,12 +2125,22 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.md,
     lineHeight: 34,
   },
+  heroTitleMobile: {
+    fontSize: 22,
+    lineHeight: 28,
+    marginBottom: Spacing.sm,
+  },
   heroStats: {
     flexDirection: 'row',
     marginBottom: Spacing.md,
     flexWrap: 'wrap',
     rowGap: Spacing.sm,
     columnGap: Spacing.lg,
+  },
+  heroStatsMobile: {
+    justifyContent: 'space-between',
+    columnGap: Spacing.md,
+    marginBottom: Spacing.sm,
   },
   heroMetaText: {
     fontSize: 13,
@@ -2254,6 +2213,12 @@ const styles = StyleSheet.create({
     marginRight: -Spacing.lg,
     marginBottom: Spacing.lg,
     gap: 8,
+  },
+  heroNowMobile: {
+    marginTop: -Spacing.md,
+    marginLeft: -Spacing.md,
+    marginRight: -Spacing.md,
+    marginBottom: Spacing.md,
   },
   pulseDot: {
     width: 7,
@@ -2339,10 +2304,10 @@ const styles = StyleSheet.create({
     backgroundColor: Palette.moonShadow,
   },
   generatedMoonWaxingCrescentShade: {
-    left: -18,
+    left: -24,
   },
   generatedMoonWaningCrescentShade: {
-    right: -18,
+    right: -24,
   },
   generatedMoonLightCircle: {
     position: 'absolute',
@@ -2400,6 +2365,9 @@ const styles = StyleSheet.create({
     backgroundColor: Palette.bgDeep,
     borderWidth: 1,
     borderColor: Palette.borderSoft,
+  },
+  issHeroStageMobile: {
+    height: 230,
   },
   moonThumb: {
     flex: 1,
@@ -2479,6 +2447,13 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     minWidth: dvw(230),
   },
+  previewCardMobile: {
+    flexBasis: '100%',
+    width: '100%',
+    minWidth: '100%' as any,
+    flexGrow: 0,
+    borderRadius: Radius.md,
+  },
   previewCardFullWidth: {
     flexBasis: '100%',
     minWidth: '100%' as any,
@@ -2492,6 +2467,9 @@ const styles = StyleSheet.create({
   previewThumbFullWidth: {
     height: dvh(220),
   },
+  previewThumbMobile: {
+    height: 154,
+  },
   previewThumbContent: {
     flex: 1,
     width: '100%',
@@ -2502,12 +2480,19 @@ const styles = StyleSheet.create({
     alignItems: 'stretch',
     gap: 3,
   },
+  previewBodyMobile: {
+    padding: Spacing.md,
+    gap: 5,
+  },
   previewEyebrowRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     gap: Spacing.sm,
     marginBottom: 3,
+  },
+  previewEyebrowRowMobile: {
+    marginBottom: 2,
   },
   previewEyebrow: {
     flex: 1,
@@ -2531,10 +2516,18 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: Palette.textPrimary,
   },
+  previewTitleMobile: {
+    fontSize: 17,
+    lineHeight: 22,
+  },
   previewMeta: {
     fontSize: 12,
     lineHeight: 17,
     color: Palette.textSecondary,
+  },
+  previewMetaMobile: {
+    fontSize: 13,
+    lineHeight: 18,
   },
 
   mapThumbWrap: {
@@ -2603,6 +2596,10 @@ const styles = StyleSheet.create({
   issHeroThumb: {
     minHeight: dvh(220),
   },
+  issHeroThumbMobile: {
+    minHeight: 230,
+    paddingHorizontal: 14,
+  },
   issHorizon: {
     position: 'absolute',
     left: 14,
@@ -2630,6 +2627,12 @@ const styles = StyleSheet.create({
     right: '8%',
     bottom: dvh(48),
     height: dvh(120),
+  },
+  issHeroOrbitArcMobile: {
+    left: 12,
+    right: 12,
+    bottom: 56,
+    height: 132,
   },
   issNode: {
     position: 'absolute',
@@ -2684,6 +2687,11 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     textAlign: 'center',
   },
+  issHeroPassLabelTextMobile: {
+    top: 30,
+    fontSize: 10,
+    lineHeight: 12,
+  },
   issHeroClockText: {
     position: 'absolute',
     top: dvh(62),
@@ -2695,11 +2703,22 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     textAlign: 'center',
   },
+  issHeroClockTextMobile: {
+    top: 58,
+    fontSize: 24,
+    lineHeight: 29,
+  },
   issHeroStation: {
     top: dvh(102),
     marginLeft: -58,
     width: dvw(116),
     height: dvh(60),
+  },
+  issHeroStationMobile: {
+    top: 98,
+    marginLeft: -56,
+    width: 112,
+    height: 72,
   },
   issReadoutLabel: {
     color: Palette.textTertiary,
@@ -2725,6 +2744,12 @@ const styles = StyleSheet.create({
     left: 16,
     right: 16,
     bottom: 8,
+  },
+  issHeroStatsRowMobile: {
+    left: 10,
+    right: 10,
+    bottom: 12,
+    gap: 10,
   },
   issStatPill: {
     flex: 1,
@@ -3054,6 +3079,10 @@ const styles = StyleSheet.create({
     borderRadius: Radius.md,
     padding: Spacing.md,
   },
+  profileCardMobile: {
+    padding: Spacing.md,
+    alignItems: 'flex-start',
+  },
   profileText: {
     flex: 1,
     minWidth: dvw(0),
@@ -3063,6 +3092,9 @@ const styles = StyleSheet.create({
     marginTop: 8,
     gap: 5,
     width: '18dvw' as any,
+  },
+  profileLevelProgressMobile: {
+    width: '100%',
   },
   profileLevelTrack: {
     height: '0.7dvh' as any,

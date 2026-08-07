@@ -9,6 +9,7 @@ import {
   Animated,
   Dimensions,
   Image,
+  ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { SymbolView } from 'expo-symbols';
@@ -57,10 +58,10 @@ export default function LoginScreen() {
   const isSmall = screen.width < 380;
   const isMedium = screen.width < 768;
   const isShort = screen.height < 740;
-  const logoSize = isShort ? 120 : isSmall ? 120 : isMedium ? 140 : 165;
-  const titleSize = isShort ? 50 : isSmall ? 52 : isMedium ? 52 : 58;
-  const inputPad = isShort ? 8 : isSmall ? 10 : 12;
-  const cardPad = isShort ? 12 : isSmall ? 14 : 18;
+  const logoSize = isMedium ? (isShort ? 82 : isSmall ? 92 : 104) : 165;
+  const titleSize = isMedium ? (isShort ? 36 : isSmall ? 38 : 42) : 58;
+  const inputPad = isMedium ? 14 : isShort ? 8 : isSmall ? 10 : 12;
+  const cardPad = isMedium ? 18 : isShort ? 12 : isSmall ? 14 : 18;
 
   const handleSignInPressIn = () => {
     Animated.timing(signInGlow, { toValue: 1, duration: 150, useNativeDriver: false }).start();
@@ -128,8 +129,12 @@ export default function LoginScreen() {
 
       <SoundToggle floating />
 
-      <View style={styles.inner}>
-        <View style={styles.centerWrapper}>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={[styles.inner, isMedium && styles.innerMobile]}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}>
+        <View style={[styles.centerWrapper, isMedium && styles.centerWrapperMobile]}>
           <Image
             source={require('@/assets/images/logo_starwindow.png')}
             style={{
@@ -141,12 +146,12 @@ export default function LoginScreen() {
           />
 
           <Text style={[styles.appName, { fontSize: titleSize }]}>StarWindow</Text>
-          <Text style={styles.tagline}>Your personal guide to the night sky</Text>
+          <Text style={[styles.tagline, isMedium && styles.taglineMobile]}>Your personal guide to the night sky</Text>
 
-          <View style={[styles.card, { padding: cardPad }]}>
+          <View style={[styles.card, isMedium && styles.cardMobile, { padding: cardPad }]}>
             
             <TextInput
-              style={[styles.input, { padding: inputPad }]}
+              style={[styles.input, isMedium && styles.inputMobile, { padding: inputPad }]}
               placeholder="Email"
               placeholderTextColor={Palette.textTertiary}
               value={email}
@@ -161,7 +166,7 @@ export default function LoginScreen() {
 
             <View style={styles.passwordInputWrap}>
               <TextInput
-                style={[styles.passwordTextInput, { padding: inputPad }]}
+                style={[styles.passwordTextInput, isMedium && styles.inputMobile, { padding: inputPad }]}
                 placeholder="Password"
                 placeholderTextColor={Palette.textTertiary}
                 value={password}
@@ -206,7 +211,7 @@ export default function LoginScreen() {
                   isSubmitting && styles.disabledButton,
                 ]}
               >
-                <Text style={styles.signInText}>{isSubmitting ? 'SIGNING IN...' : 'SIGN IN'}</Text>
+                <Text style={[styles.signInText, isMedium && styles.signInTextMobile]}>{isSubmitting ? 'SIGNING IN...' : 'SIGN IN'}</Text>
               </Animated.View>
             </TouchableOpacity>
 
@@ -225,14 +230,14 @@ export default function LoginScreen() {
               activeOpacity={1}
             >
               <Animated.View style={[styles.newUserButton, { borderColor: newUserBorderColor }]}>
-                <Text style={styles.newUserText}>Create New Account</Text>
+                <Text style={[styles.newUserText, isMedium && styles.newUserTextMobile]}>Create New Account</Text>
               </Animated.View>
             </TouchableOpacity>
           </View>
 
           <Text style={styles.footer}>*   *   *</Text>
         </View>
-      </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -248,14 +253,25 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
   },
-  inner: {
+  scroll: {
     flex: 1,
+    width: '100%',
+  },
+  inner: {
+    flexGrow: 1,
     width: '100%',
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 12,
     paddingHorizontal: 20,
     overflow: 'hidden',
+  },
+  innerMobile: {
+    justifyContent: 'flex-start',
+    paddingTop: 54,
+    paddingBottom: 28,
+    paddingHorizontal: 18,
+    overflow: 'visible',
   },
   centerWrapper: {
     width: '100%',
@@ -280,6 +296,12 @@ const styles = StyleSheet.create({
     letterSpacing: 1.5,
     textAlign: 'center',
   },
+  taglineMobile: {
+    fontSize: 12,
+    lineHeight: 17,
+    letterSpacing: 0.6,
+    marginBottom: 16,
+  },
   card: {
     width: '120%',
     backgroundColor: Palette.bgDeep,
@@ -291,6 +313,10 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 24,
   },
+  cardMobile: {
+    width: '100%',
+    borderRadius: Radius.md,
+  },
   input: {
     backgroundColor: Palette.surface,
     borderWidth: 1,
@@ -299,6 +325,10 @@ const styles = StyleSheet.create({
     color: Palette.textSecondary,
     fontSize: 13,
     marginBottom: 8,
+  },
+  inputMobile: {
+    minHeight: 48,
+    fontSize: 15,
   },
   passwordInputWrap: {
     flexDirection: 'row',
@@ -320,6 +350,10 @@ const styles = StyleSheet.create({
     minHeight: dvh(40),
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  centerWrapperMobile: {
+    maxWidth: 420,
+    justifyContent: 'flex-start',
   },
   forgotRow: {
     alignSelf: 'flex-end',
@@ -350,6 +384,10 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: 'bold',
     letterSpacing: 4,
+  },
+  signInTextMobile: {
+    fontSize: 14,
+    letterSpacing: 2,
   },
   errorText: {
     color: Palette.accentRed,
@@ -383,6 +421,9 @@ const styles = StyleSheet.create({
     color: Palette.accentMuted,
     fontSize: 12,
     letterSpacing: 1,
+  },
+  newUserTextMobile: {
+    fontSize: 13,
   },
   footer: {
     color: Palette.border,
