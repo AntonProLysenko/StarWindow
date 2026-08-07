@@ -345,8 +345,12 @@ function formatIssTitle({
   return 'Next ISS Pass';
 }
 
-function formatIssMeta(pass: IssPass | null) {
-  if (!pass) return 'Enable location to check visible ISS passes near you.';
+function formatIssMeta(pass: IssPass | null, hasLocation = false) {
+  if (!pass) {
+    return hasLocation
+      ? 'No visible ISS pass found in the current forecast window.'
+      : 'Enable location to check visible ISS passes near you.';
+  }
 
   const visibleDuration = formatIssDuration(pass.visible_duration_sec ?? pass.duration_sec);
   const details = [
@@ -1108,7 +1112,7 @@ export default function DashboardScreen({ locked = false }: DashboardScreenProps
                   ? 'Checking visible passes for your location.'
                   : issError
                   ? issError
-                  : formatIssMeta(nextIssPass))}
+                  : formatIssMeta(nextIssPass, Boolean(browserCoords)))}
               </Text>
             </View>
 

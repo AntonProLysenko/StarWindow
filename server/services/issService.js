@@ -8,9 +8,11 @@ const issQueries = require("../db/queries/iss");
 const locationQueries = require("../db/queries/locations");
 const { isCacheStale, TTL_MINUTES } = require("../middleware/cache");
 
-const ISS_API_BASE = "https://iss-api.fly.dev";
+const ISS_API_BASE = process.env.ISS_API_BASE || "https://iss-api.polluxlabs.io";
+const ISS_INFO_BASE = process.env.ISS_INFO_BASE || "https://issinfo.net";
 const TZ = "America/New_York";
 const ISS_API_MAX_DAYS_AHEAD = 14;
+const ISS_API_REQUEST_TIMEOUT_MS = 10000;
 
 /**
  * Get upcoming visible ISS passes for a coordinate.
@@ -39,28 +41,10 @@ async function getIssPasses({ lat, lon, n = 5, daysAhead = 5 }) {
   }
 
   // 2) Fetch live.
-  const url = `${ISS_API_BASE}/iss-pass?lat=${lat}&lon=${lon}&n=${passCount}&days_ahead=${searchDays}&visible_only=true`;
-  const response = await fetch(url);
-  if (!response.ok) {
-    const err = new Error(`ISS API returned ${response.status}`);
-    err.status = response.status;
-    throw err;
-  }
-  const data = await response.json();
+  const data = await fetchLiveIssPasses({ lat, lon, passCount, searchDays });
 
   // 3) Transform into DB rows (raw timestamps) — display is derived from these.
-  const dbRows = (data.passes || []).map((pass) => ({
-    riseTime: pass.rise?.time || null,
-    riseCompass: pass.rise?.compass || null,
-    peakTime: pass.culmination?.time || null,
-    peakCompass: pass.culmination?.compass || null,
-    peakElevationDeg: pass.culmination?.elevation_deg ?? pass.culmination?.elevation ?? null,
-    setTime: pass.set?.time || null,
-    setCompass: pass.set?.compass || null,
-    durationSec: pass.duration_sec ?? null,
-    visibleDurationSec: pass.visible_duration_sec ?? null,
-    visible: pass.visible ?? null,
-  }));
+  const dbRows = data.passes || [];
 
   console.log("\n=== ISS PASSES ===");
   console.log(`    Observer  : ${JSON.stringify(data.observer)}`);
@@ -78,6 +62,90 @@ async function getIssPasses({ lat, lon, n = 5, daysAhead = 5 }) {
     tle_epoch: data.tle_epoch,
     generated_at: data.generated_at,
     passes: dbRows.map(dbRowToDisplay),
+  };
+}
+
+async function fetchLiveIssPasses({ lat, lon, passCount, searchDays }) {
+  try {
+    const primary = await fetchPolluxIssPasses({ lat, lon, passCount, searchDays });
+    if (primary.passes.length > 0) return primary;
+    console.warn("Pollux ISS API returned no visible passes; trying issinfo.net fallback.");
+  } catch (error) {
+    console.warn("Pollux ISS API unavailable; trying issinfo.net fallback:", error.message);
+  }
+
+  return fetchIssInfoPass({ lat, lon });
+}
+
+async function fetchPolluxIssPasses({ lat, lon, passCount, searchDays }) {
+  const url = `${ISS_API_BASE}/iss-pass?lat=${lat}&lon=${lon}&n=${passCount}&days_ahead=${searchDays}&visible_only=true`;
+  const response = await fetchWithTimeout(url, ISS_API_REQUEST_TIMEOUT_MS);
+  if (!response.ok) {
+    const err = new Error(`ISS API returned ${response.status}`);
+    err.status = response.status;
+    throw err;
+  }
+  const data = await response.json();
+
+  return {
+    observer: data.observer,
+    tle_epoch: data.tle_epoch,
+    generated_at: data.generated_at,
+    passes: (data.passes || []).map(polluxPassToDbRow),
+  };
+}
+
+async function fetchIssInfoPass({ lat, lon }) {
+  const params = new URLSearchParams({
+    lat: String(lat),
+    lon: String(lon),
+    sat: "iss",
+    type: "visible",
+    format: "json",
+  });
+  const response = await fetchWithTimeout(`${ISS_INFO_BASE}/next-pass?${params}`, ISS_API_REQUEST_TIMEOUT_MS);
+  if (!response.ok) {
+    const err = new Error(`ISS fallback API returned ${response.status}`);
+    err.status = response.status;
+    throw err;
+  }
+  const data = await response.json();
+
+  return {
+    observer: { lat, lon },
+    tle_epoch: null,
+    generated_at: data.generatedAt,
+    passes: data.pass ? [issInfoPassToDbRow(data.pass)] : [],
+  };
+}
+
+function polluxPassToDbRow(pass) {
+  return {
+    riseTime: pass.rise?.time || null,
+    riseCompass: pass.rise?.compass || null,
+    peakTime: pass.culmination?.time || null,
+    peakCompass: pass.culmination?.compass || null,
+    peakElevationDeg: pass.culmination?.elevation_deg ?? pass.culmination?.elevation ?? null,
+    setTime: pass.set?.time || null,
+    setCompass: pass.set?.compass || null,
+    durationSec: pass.duration_sec ?? null,
+    visibleDurationSec: pass.visible_duration_sec ?? null,
+    visible: pass.visible ?? null,
+  };
+}
+
+function issInfoPassToDbRow(pass) {
+  return {
+    riseTime: pass.start || null,
+    riseCompass: pass.startDirection || null,
+    peakTime: pass.peak || null,
+    peakCompass: pass.peakDirection || null,
+    peakElevationDeg: pass.maxElevation ?? null,
+    setTime: pass.end || null,
+    setCompass: pass.endDirection || null,
+    durationSec: pass.durationSeconds ?? null,
+    visibleDurationSec: pass.durationSeconds ?? null,
+    visible: pass.visible ?? true,
   };
 }
 
@@ -125,6 +193,24 @@ function normalizePositiveInteger(value, fallback) {
 
 function hasUsablePassCache(rows) {
   return rows.length > 0 && rows.every((row) => row.peak_elevation_deg !== null);
+}
+
+async function fetchWithTimeout(url, timeoutMs) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetch(url, { signal: controller.signal });
+  } catch (error) {
+    if (error.name === "AbortError") {
+      const timeoutError = new Error("ISS API request timed out");
+      timeoutError.status = 504;
+      throw timeoutError;
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 module.exports = { getIssPasses };

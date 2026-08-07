@@ -2,6 +2,7 @@ import sendRequest from './send-request';
 
 const API_BASE = process.env.EXPO_PUBLIC_API_URL;
 const ISS_URL = `${API_BASE}/api/iss`;
+const REQUEST_TIMEOUT_MS = 15000;
 
 export type IssPassPoint = {
   time?: string | null;
@@ -45,5 +46,17 @@ export async function fetchIssPasses({
     days_ahead: String(daysAhead),
   });
 
-  return sendRequest<null, IssPassesResponse>(`${ISS_URL}?${params}`);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+  try {
+    return await sendRequest<null, IssPassesResponse>(
+      `${ISS_URL}?${params}`,
+      'GET',
+      null,
+      { signal: controller.signal }
+    );
+  } finally {
+    clearTimeout(timeout);
+  }
 }
