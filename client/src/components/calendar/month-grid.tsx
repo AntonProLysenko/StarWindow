@@ -27,6 +27,7 @@ type MonthGridProps = {
   selectedDate?: Date;
   onSelectDate?: (date: Date) => void;
   compact?: boolean;
+  thumbnail?: boolean;
 };
 
 const weekdays = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
@@ -66,6 +67,7 @@ function MonthGridComponent({
   selectedDate,
   onSelectDate,
   compact = false,
+  thumbnail = false,
 }: MonthGridProps) {
   const [brokenImages, setBrokenImages] = useState<Record<string, boolean>>({});
   const weeks = useMemo(() => getCalendarWeeks(year, month), [year, month]);
@@ -85,11 +87,20 @@ function MonthGridComponent({
   }, [events]);
 
   return (
-    <View style={[styles.calendarCard, compact && styles.calendarCardCompact]}>
-      <View style={[styles.calendarRow, compact && styles.calendarRowCompact]}>
+    <View style={[styles.calendarCard, compact && styles.calendarCardCompact, thumbnail && styles.calendarCardThumbnail]}>
+      <View style={[styles.calendarRow, compact && styles.calendarRowCompact, thumbnail && styles.calendarRowThumbnail]}>
         {weekdays.map((day) => (
-          <View key={day} style={[styles.dayCell, styles.dayCellHeader, compact && styles.dayCellCompact]}>
-            <Text style={[styles.dayHeaderText, compact && styles.dayHeaderTextCompact]}>
+          <View
+            key={day}
+            style={[
+              styles.dayCell,
+              styles.dayCellHeader,
+              compact && styles.dayCellCompact,
+              compact && styles.dayCellHeaderCompact,
+              thumbnail && styles.dayCellThumbnail,
+              thumbnail && styles.dayCellHeaderThumbnail,
+            ]}>
+            <Text style={[styles.dayHeaderText, compact && styles.dayHeaderTextCompact, thumbnail && styles.dayHeaderTextThumbnail]}>
               {compact ? day.slice(0, 1) : day}
             </Text>
           </View>
@@ -97,7 +108,7 @@ function MonthGridComponent({
       </View>
 
       {weeks.map((week, weekIndex) => (
-        <View key={`week-${weekIndex}`} style={[styles.calendarRow, compact && styles.calendarRowCompact]}>
+        <View key={`week-${weekIndex}`} style={[styles.calendarRow, compact && styles.calendarRowCompact, thumbnail && styles.calendarRowThumbnail]}>
           {week.map((day) => {
             const isSelected =
               day.currentMonth &&
@@ -110,14 +121,16 @@ function MonthGridComponent({
                 style={[
                   styles.dayCell,
                   compact && styles.dayCellCompact,
+                  thumbnail && styles.dayCellThumbnail,
                   isSelected && styles.dayCellSelected,
                   !day.currentMonth && styles.dayCellDisabled,
                 ]}>
-                <View style={[styles.dayNumberContainer, compact && styles.dayNumberContainerCompact]}>
+                <View style={[styles.dayNumberContainer, compact && styles.dayNumberContainerCompact, thumbnail && styles.dayNumberContainerThumbnail]}>
                   <Text
                     style={[
                       styles.dayCellText,
                       compact && styles.dayCellTextCompact,
+                      thumbnail && styles.dayCellTextThumbnail,
                       isSelected && styles.dayCellSelectedText,
                       !day.currentMonth && styles.dayCellDisabledText,
                     ]}>
@@ -125,22 +138,22 @@ function MonthGridComponent({
                   </Text>
                 </View>
                 {dayEvents.length > 0 && (
-                  <View style={[styles.eventIconsContainer, compact && styles.eventIconsContainerCompact]}>
+                  <View style={[styles.eventIconsContainer, compact && styles.eventIconsContainerCompact, thumbnail && styles.eventIconsContainerThumbnail]}>
                     {dayEvents.slice(0, compact ? 1 : 3).map((event) => {
                       const iconLabel = event.icon ?? getEventIconByType(event.type ?? event.eventType);
                       const showImage = Boolean(event.imageUrl) && !brokenImages[event.id];
 
                       return (
-                        <View key={event.id} style={[styles.eventIconBox, compact && styles.eventIconBoxCompact]}>
+                        <View key={event.id} style={[styles.eventIconBox, compact && styles.eventIconBoxCompact, thumbnail && styles.eventIconBoxThumbnail]}>
                           {showImage ? (
                             <Image
                               source={{ uri: event.imageUrl! }}
-                              style={[styles.eventImage, compact && styles.eventImageCompact]}
+                              style={[styles.eventImage, compact && styles.eventImageCompact, thumbnail && styles.eventImageThumbnail]}
                               resizeMode="cover"
                               onError={() => setBrokenImages((current) => ({ ...current, [event.id]: true }))}
                             />
                           ) : (
-                            <Text style={[styles.eventIcon, compact && styles.eventIconCompact]}>
+                            <Text style={[styles.eventIcon, compact && styles.eventIconCompact, thumbnail && styles.eventIconThumbnail]}>
                               {compact ? '●' : iconLabel}
                             </Text>
                           )}
@@ -152,7 +165,7 @@ function MonthGridComponent({
               </View>
             );
 
-            if (!onSelectDate || !day.currentMonth || compact) {
+            if (!onSelectDate || !day.currentMonth) {
               return <View key={day.key} style={styles.dayPressable}>{dayContent}</View>;
             }
 
@@ -180,8 +193,11 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   calendarCardCompact: {
-    flex: 1,
-    padding: 8,
+    padding: 0,
+  },
+  calendarCardThumbnail: {
+    height: '100%',
+    justifyContent: 'space-between',
   },
   calendarRow: {
     flexDirection: 'row',
@@ -191,8 +207,11 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   calendarRowCompact: {
+    minHeight: 44,
+  },
+  calendarRowThumbnail: {
+    minHeight: 0,
     flex: 1,
-    minHeight: '2dvh' as any,
   },
   dayPressable: {
     flex: 1,
@@ -200,7 +219,7 @@ const styles = StyleSheet.create({
   },
   dayCell: {
     flex: 1,
-    minHeight: dvh(130),
+    minHeight: dvh(92),
     minWidth: dvw(0),
     width: '100%',
     justifyContent: 'space-between',
@@ -212,19 +231,34 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   dayCellCompact: {
-    minHeight: '2dvh' as any,
+    minHeight: 44,
     minWidth: dvw(0),
-    borderRadius: 4,
-    paddingHorizontal: 0,
-    paddingVertical: 2,
+    borderRadius: 6,
+    paddingHorizontal: 4,
+    paddingVertical: 4,
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'space-between',
+  },
+  dayCellThumbnail: {
+    minHeight: 0,
+    height: '100%',
+    borderRadius: 6,
+    paddingHorizontal: 3,
+    paddingVertical: 3,
   },
   dayCellHeader: {
     backgroundColor: 'transparent',
-    minHeight: dvh(50),
+    minHeight: dvh(36),
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  dayCellHeaderCompact: {
+    minHeight: 28,
+  },
+  dayCellHeaderThumbnail: {
+    minHeight: 0,
+    height: 18,
+    flex: 0,
   },
   dayCellSelected: {
     backgroundColor: alpha(Palette.accent, 0.18),
@@ -244,22 +278,33 @@ const styles = StyleSheet.create({
   dayNumberContainerCompact: {
     alignItems: 'center',
     justifyContent: 'center',
-    minHeight: dvh(0),
+    minHeight: 18,
+  },
+  dayNumberContainerThumbnail: {
+    minHeight: 12,
   },
   dayCellText: {
     color: Palette.textSecondary,
   },
   dayCellTextCompact: {
-    fontSize: 9,
-    lineHeight: 11,
+    fontSize: 12,
+    lineHeight: 14,
     textAlign: 'center',
     width: '100%',
+  },
+  dayCellTextThumbnail: {
+    fontSize: 10,
+    lineHeight: 12,
   },
   dayHeaderText: {
     color: Palette.accentMuted,
     fontWeight: '600',
   },
   dayHeaderTextCompact: {
+    fontSize: 10,
+    lineHeight: 12,
+  },
+  dayHeaderTextThumbnail: {
     fontSize: 9,
     lineHeight: 11,
   },
@@ -280,7 +325,10 @@ const styles = StyleSheet.create({
     gap: Spacing.xxs,
   },
   eventIconsContainerCompact: {
-    bottom: 1,
+    bottom: 5,
+  },
+  eventIconsContainerThumbnail: {
+    bottom: 4,
   },
   eventIconBox: {
     width: 20,
@@ -292,8 +340,13 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   eventIconBoxCompact: {
-    width: 3,
-    height: 3,
+    width: 5,
+    height: 5,
+    borderRadius: 3,
+  },
+  eventIconBoxThumbnail: {
+    width: 4,
+    height: 4,
     borderRadius: 2,
   },
   eventImage: {
@@ -301,6 +354,9 @@ const styles = StyleSheet.create({
     height: '100%',
   },
   eventImageCompact: {
+    borderRadius: 2,
+  },
+  eventImageThumbnail: {
     borderRadius: 2,
   },
   eventIcon: {
@@ -311,6 +367,10 @@ const styles = StyleSheet.create({
   eventIconCompact: {
     fontSize: 6,
     lineHeight: 6,
+  },
+  eventIconThumbnail: {
+    fontSize: 5,
+    lineHeight: 5,
   },
   pressed: {
     opacity: 0.7,

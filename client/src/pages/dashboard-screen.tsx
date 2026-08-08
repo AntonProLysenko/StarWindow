@@ -1018,7 +1018,11 @@ export default function DashboardScreen({ locked = false }: DashboardScreenProps
 
       <View style={styles.body}>
         {/* ---------- MAIN CONTENT ---------- */}
-        <ScrollView style={styles.main} contentContainerStyle={[styles.mainContent, isMobile && styles.mainContentMobile]}>
+        <ScrollView
+          style={[styles.main, isMobile && styles.mobileSnapScroll]}
+          contentContainerStyle={[styles.mainContent, isMobile && styles.mainContentMobile]}
+          decelerationRate={isMobile ? 'fast' : 'normal'}
+          disableIntervalMomentum={isMobile}>
           <View style={[styles.topBar, isMobile && styles.topBarMobile]}>
             <View style={styles.topBarCopy}>
               <Text style={styles.eyebrow}>
@@ -1085,7 +1089,7 @@ export default function DashboardScreen({ locked = false }: DashboardScreenProps
 
           {/* ---------- ISS HERO ---------- */}
           <View style={[styles.hero, isMobile && styles.heroMobile]}>
-            <View style={styles.heroLeft}>
+            <View style={[styles.heroLeft, isMobile && styles.heroLeftMobile]}>
 
               <View style={[styles.heroNow, isMobile && styles.heroNowMobile]}>
                 <View style={styles.pulseDot} />
@@ -1407,6 +1411,8 @@ function ViewingScoreBreakdown({
   score: number | null;
   inputs: NonNullable<ViewingScoreResponse['inputs']>;
 }) {
+  const { width } = useWindowDimensions();
+  const isMobile = width < Breakpoints.tablet;
   const darkness = inputs.darkness_factor ?? null;
   const clouds = inputs.clouds_pct ?? null;
   const light = inputs.light_pollution_level ?? null;
@@ -1432,21 +1438,55 @@ function ViewingScoreBreakdown({
             ? 'Bright local light pollution is limiting your score tonight.'
             : 'Here’s what’s shaping your score right now.';
 
+  const compactWhy =
+    darkness != null && darkness <= 0
+      ? 'Daylight now. Check again after dark.'
+      : darkness != null && darkness < 1
+        ? 'Twilight now. Viewing improves as the sky darkens.'
+        : clouds != null && clouds >= 60
+          ? 'Cloud cover is the main limit tonight.'
+          : light != null && light >= 6
+            ? 'Light pollution is limiting visibility.'
+            : 'Good context for tonight.';
+
   return (
-    <View style={styles.scoreBreakdown}>
+    <View style={[styles.scoreBreakdown, isMobile && styles.scoreBreakdownMobile]}>
       <View style={styles.scoreBreakdownHeader}>
-        <Text style={styles.scoreBreakdownLabel}>VIEWING SCORE</Text>
-        <Text style={styles.scoreBreakdownValue}>{score ?? '--'}</Text>
+        <Text style={[styles.scoreBreakdownLabel, isMobile && styles.scoreBreakdownLabelMobile]}>
+          VIEWING SCORE
+        </Text>
+        <Text style={[styles.scoreBreakdownValue, isMobile && styles.scoreBreakdownValueMobile]}>
+          {score ?? '--'}
+        </Text>
       </View>
-      <Text style={styles.scoreBreakdownWhy}>{why}</Text>
-      <View style={styles.scoreBreakdownRow}>
-        <Stat label="TIME OF DAY" value={timeText} />
-        <Stat label="CLOUD COVER" value={clouds != null ? `${Math.round(clouds)}%` : '--'} />
-        <Stat
-          label="LIGHT POLLUTION"
-          value={light != null ? `Bortle ~${Math.round(light)} · ${bortleLabel(light)}` : '--'}
-        />
-      </View>
+      <Text style={[styles.scoreBreakdownWhy, isMobile && styles.scoreBreakdownWhyMobile]}>
+        {isMobile ? compactWhy : why}
+      </Text>
+      {isMobile ? (
+        <View style={styles.scoreCompactMetrics}>
+          <View style={styles.scoreCompactMetric}>
+            <Text style={styles.scoreCompactLabel}>Clouds</Text>
+            <Text style={styles.scoreCompactValue}>
+              {clouds != null ? `${Math.round(clouds)}%` : '--'}
+            </Text>
+          </View>
+          <View style={styles.scoreCompactMetric}>
+            <Text style={styles.scoreCompactLabel}>Light</Text>
+            <Text style={styles.scoreCompactValue}>
+              {light != null ? `Bortle ${Math.round(light)}` : '--'}
+            </Text>
+          </View>
+        </View>
+      ) : (
+        <View style={styles.scoreBreakdownRow}>
+          <Stat label="TIME OF DAY" value={timeText} />
+          <Stat label="CLOUD COVER" value={clouds != null ? `${Math.round(clouds)}%` : '--'} />
+          <Stat
+            label="LIGHT POLLUTION"
+            value={light != null ? `Bortle ~${Math.round(light)} · ${bortleLabel(light)}` : '--'}
+          />
+        </View>
+      )}
     </View>
   );
 }
@@ -1530,6 +1570,7 @@ function CalendarThumb({ events }: { events: CalendarEvent[] }) {
       selectedDate={today}
       events={events}
       compact
+      thumbnail
     />
   );
 }
@@ -1994,6 +2035,23 @@ function WeatherThumb({ weather, isLoading }: { weather: WeatherResponse | null;
 }
 
 function WeatherBar({ label, value }: { label: string; value: number }) {
+  const { width } = useWindowDimensions();
+  const isMobile = width < Breakpoints.tablet;
+
+  if (isMobile) {
+    return (
+      <View style={styles.weatherMetricMobile}>
+        <View style={styles.weatherMetricHeaderMobile}>
+          <Text style={styles.weatherMetricLabelMobile}>{label}</Text>
+          <Text style={styles.weatherMetricValueMobile}>{Math.round(value)}%</Text>
+        </View>
+        <View style={styles.weatherMetricTrackMobile}>
+          <View style={[styles.weatherBarFill, { width: `${value}%` as any }]} />
+        </View>
+      </View>
+    );
+  }
+
   return (
     <View style={styles.weatherBarRow}>
       <Text style={styles.weatherBarLabel}>{label}</Text>
@@ -2029,6 +2087,11 @@ const styles = StyleSheet.create({
   body: { flex: 1 },
 
   main: { flex: 1 },
+  mobileSnapScroll: {
+    scrollSnapType: 'y proximity',
+    overscrollBehaviorY: 'contain',
+    WebkitOverflowScrolling: 'touch',
+  } as any,
   mainContent: {
     padding: Spacing.lg,
     paddingLeft: 20,
@@ -2055,7 +2118,9 @@ const styles = StyleSheet.create({
   topBarMobile: {
     flexDirection: 'column',
     gap: Spacing.sm,
-  },
+    scrollSnapAlign: 'start',
+    scrollSnapStop: 'normal',
+  } as any,
   topBarCopy: {
     flex: 1,
     minWidth: dvw(0),
@@ -2107,10 +2172,17 @@ const styles = StyleSheet.create({
     gap: Spacing.lg,
   },
   heroMobile: {
-    padding: Spacing.md,
+    paddingTop: Spacing.md,
+    paddingBottom: 0,
+    paddingHorizontal: 0,
     gap: Spacing.md,
-  },
+    scrollSnapAlign: 'start',
+    scrollSnapStop: 'always',
+  } as any,
   heroLeft: {},
+  heroLeftMobile: {
+    paddingHorizontal: Spacing.md,
+  },
   heroEyebrow: {
     fontSize: 11,
     color: Palette.textTertiary,
@@ -2156,6 +2228,12 @@ const styles = StyleSheet.create({
     gap: Spacing.sm,
     marginBottom: Spacing.md,
   },
+  scoreBreakdownMobile: {
+    padding: 12,
+    gap: 8,
+    marginBottom: Spacing.sm,
+    borderRadius: Radius.md,
+  },
   scoreBreakdownHeader: {
     flexDirection: 'row',
     alignItems: 'baseline',
@@ -2167,21 +2245,61 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
     fontWeight: '700',
   },
+  scoreBreakdownLabelMobile: {
+    fontSize: 10,
+    lineHeight: 12,
+  },
   scoreBreakdownValue: {
     fontSize: 28,
     color: Palette.accent,
     fontWeight: '700',
+  },
+  scoreBreakdownValueMobile: {
+    fontSize: 24,
+    lineHeight: 28,
   },
   scoreBreakdownWhy: {
     fontSize: 13,
     lineHeight: 18,
     color: Palette.textSecondary,
   },
+  scoreBreakdownWhyMobile: {
+    fontSize: 12,
+    lineHeight: 17,
+  },
   scoreBreakdownRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     rowGap: Spacing.sm,
     columnGap: Spacing.lg,
+  },
+  scoreCompactMetrics: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  scoreCompactMetric: {
+    flex: 1,
+    minWidth: 0,
+    borderWidth: 1,
+    borderColor: Palette.borderSoft,
+    borderRadius: Radius.sm,
+    backgroundColor: Palette.bgDeep,
+    paddingVertical: 7,
+    paddingHorizontal: 9,
+    gap: 2,
+  },
+  scoreCompactLabel: {
+    color: Palette.textTertiary,
+    fontSize: 9,
+    lineHeight: 11,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+  },
+  scoreCompactValue: {
+    color: Palette.accent,
+    fontSize: 14,
+    lineHeight: 18,
+    fontWeight: '800',
   },
   statLabel: {
     fontSize: 10,
@@ -2453,7 +2571,9 @@ const styles = StyleSheet.create({
     minWidth: '100%' as any,
     flexGrow: 0,
     borderRadius: Radius.md,
-  },
+    scrollSnapAlign: 'start',
+    scrollSnapStop: 'always',
+  } as any,
   previewCardFullWidth: {
     flexBasis: '100%',
     minWidth: '100%' as any,
@@ -2463,6 +2583,7 @@ const styles = StyleSheet.create({
     backgroundColor: Palette.bgDeep,
     borderBottomWidth: 1,
     borderBottomColor: Palette.borderSoft,
+    overflow: 'hidden',
   },
   previewThumbFullWidth: {
     height: dvh(220),
@@ -2598,7 +2719,7 @@ const styles = StyleSheet.create({
   },
   issHeroThumbMobile: {
     minHeight: 230,
-    paddingHorizontal: 14,
+    paddingHorizontal: 0,
   },
   issHorizon: {
     position: 'absolute',
@@ -2629,8 +2750,8 @@ const styles = StyleSheet.create({
     height: dvh(120),
   },
   issHeroOrbitArcMobile: {
-    left: 12,
-    right: 12,
+    left: 0,
+    right: 0,
     bottom: 56,
     height: 132,
   },
@@ -2746,10 +2867,10 @@ const styles = StyleSheet.create({
     bottom: 8,
   },
   issHeroStatsRowMobile: {
-    left: 10,
-    right: 10,
+    left: 0,
+    right: 0,
     bottom: 12,
-    gap: 10,
+    gap: 6,
   },
   issStatPill: {
     flex: 1,
@@ -3037,6 +3158,37 @@ const styles = StyleSheet.create({
     bottom: 10,
     gap: 6,
   },
+  weatherMetricMobile: {
+    gap: 4,
+  },
+  weatherMetricHeaderMobile: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  weatherMetricLabelMobile: {
+    flex: 1,
+    minWidth: 0,
+    color: Palette.textSecondary,
+    fontSize: 11,
+    lineHeight: 13,
+    fontWeight: '700',
+  },
+  weatherMetricValueMobile: {
+    color: Palette.textPrimary,
+    fontSize: 11,
+    lineHeight: 13,
+    fontWeight: '800',
+    textAlign: 'right',
+  },
+  weatherMetricTrackMobile: {
+    width: '100%',
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: Palette.surfaceRaised,
+    overflow: 'hidden',
+  },
   weatherBarRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -3082,7 +3234,9 @@ const styles = StyleSheet.create({
   profileCardMobile: {
     padding: Spacing.md,
     alignItems: 'flex-start',
-  },
+    scrollSnapAlign: 'start',
+    scrollSnapStop: 'always',
+  } as any,
   profileText: {
     flex: 1,
     minWidth: dvw(0),

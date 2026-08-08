@@ -4,13 +4,12 @@
 // Rocket launches keep a distinct badge and rocket placeholder when they have
 // no image, so they stand out in the mixed chronological list.
 
-import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Image, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 
 import { fallbackIconSource } from '@/components/events/event-fallback-icon';
-import { Palette, Radius } from '@/constants/tokens';
+import { Breakpoints, Palette, Radius, Spacing, alpha } from '@/constants/tokens';
 import { getEventColorTheme, getEventEmoji } from '@/lib/event-colors';
 import type { EventListItem } from '@/lib/events-api';
-import { dvw, dvh } from '@/utilities/responsive-dimensions';
 
 const DESCRIPTION_MAX = 140;
 
@@ -64,6 +63,8 @@ export function EventCard({
   isSaved?: boolean;
   onPress: (event: EventListItem) => void;
 }) {
+  const { width } = useWindowDimensions();
+  const isMobile = width < Breakpoints.tablet;
   const isLaunch = event.category === 'launch';
   const colorTheme = getEventColorTheme(event);
   const eventEmoji = getEventEmoji(event);
@@ -77,10 +78,11 @@ export function EventCard({
       onPress={() => onPress(event)}
       style={({ pressed }) => [
         styles.card,
+        isMobile && styles.cardMobile,
         isSaved && styles.cardSaved,
         pressed && styles.cardPressed,
       ]}>
-      <View style={styles.thumb}>
+      <View style={[styles.thumb, isMobile && styles.thumbMobile]}>
         {event.image_url ? (
           <Image source={{ uri: event.image_url }} style={styles.thumbImage} resizeMode="cover" />
         ) : fallbackIcon && isSpacewalk ? (
@@ -96,20 +98,25 @@ export function EventCard({
         )}
       </View>
 
-      <View style={styles.body}>
+      <View style={[styles.body, isMobile && styles.bodyMobile]}>
         <View style={styles.badgeRow}>
           <View style={[styles.badge, { backgroundColor: colorTheme.background, borderColor: colorTheme.border }]}>
-            <Text style={[styles.badgeText, { color: colorTheme.accent }]}>
+            <Text style={[styles.badgeText, { color: colorTheme.accent }]} numberOfLines={1}>
               {eventEmoji} {isLaunch ? 'LAUNCH' : event.type.toUpperCase()}
             </Text>
           </View>
+          {isSaved ? (
+            <View style={styles.savedBadge}>
+              <Text style={styles.savedBadgeText}>SAVED</Text>
+            </View>
+          ) : null}
         </View>
 
-        <Text style={styles.name} numberOfLines={2}>
+        <Text style={[styles.name, isMobile && styles.nameMobile]} numberOfLines={2}>
           {event.name}
         </Text>
 
-        <Text style={styles.date}>{formatEventDate(event.date, event.date_precision)}</Text>
+        <Text style={styles.date} numberOfLines={1}>{formatEventDate(event.date, event.date_precision)}</Text>
 
         {event.location ? (
           <Text style={styles.location} numberOfLines={1}>
@@ -118,7 +125,7 @@ export function EventCard({
         ) : null}
 
         {description ? (
-          <Text style={styles.description} numberOfLines={3}>
+          <Text style={[styles.description, isMobile && styles.descriptionMobile]} numberOfLines={isMobile ? 2 : 3}>
             {description}
           </Text>
         ) : null}
@@ -156,16 +163,27 @@ const styles = StyleSheet.create({
     borderRadius: Radius.md,
     overflow: 'hidden',
   },
+  cardMobile: {
+    flexDirection: 'column',
+    borderRadius: Radius.md,
+    scrollSnapAlign: 'start',
+    scrollSnapStop: 'always',
+  } as any,
   cardSaved: {
-    borderWidth: 2,
     borderColor: Palette.accentBlue,
   },
   cardPressed: {
     opacity: 0.75,
   },
   thumb: {
-    width: dvw(120),
+    width: 132,
+    minHeight: 132,
     backgroundColor: Palette.bgDeep,
+  },
+  thumbMobile: {
+    width: '100%',
+    height: 156,
+    minHeight: 156,
   },
   thumbImage: {
     width: '100%',
@@ -173,7 +191,7 @@ const styles = StyleSheet.create({
   },
   thumbFallback: {
     flex: 1,
-    minHeight: dvh(120),
+    minHeight: 132,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -190,18 +208,44 @@ const styles = StyleSheet.create({
     padding: 14,
     gap: 4,
   },
+  bodyMobile: {
+    padding: Spacing.md,
+    gap: 6,
+  },
   badgeRow: {
     flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: Spacing.sm,
   },
   badge: {
+    flexShrink: 1,
+    minWidth: 0,
     paddingVertical: 3,
     paddingHorizontal: 8,
     borderRadius: Radius.pill,
+    borderWidth: 1,
+    maxWidth: '100%',
   },
   badgeText: {
     fontSize: 9.5,
     fontWeight: '700',
     letterSpacing: 0.5,
+  },
+  savedBadge: {
+    flexShrink: 0,
+    paddingVertical: 3,
+    paddingHorizontal: 8,
+    borderRadius: Radius.pill,
+    borderWidth: 1,
+    borderColor: Palette.accentBlue,
+    backgroundColor: alpha(Palette.accentBlue, 0.12),
+  },
+  savedBadgeText: {
+    color: Palette.accentBlue,
+    fontSize: 9,
+    lineHeight: 11,
+    fontWeight: '800',
   },
   name: {
     fontSize: 16,
@@ -209,6 +253,10 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: Palette.textPrimary,
     marginTop: 2,
+  },
+  nameMobile: {
+    fontSize: 17,
+    lineHeight: 22,
   },
   date: {
     fontSize: 12,
@@ -224,6 +272,10 @@ const styles = StyleSheet.create({
     lineHeight: 17,
     color: Palette.textSecondary,
     marginTop: 2,
+  },
+  descriptionMobile: {
+    fontSize: 13,
+    lineHeight: 18,
   },
   notePreview: {
     marginTop: 6,

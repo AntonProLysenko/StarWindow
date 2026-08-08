@@ -43,6 +43,8 @@ export function AppSidebar() {
   const safeAreaInsets = useSafeAreaInsets();
   const [logoutHovered, setLogoutHovered] = useState(false);
   const isMobile = width < Breakpoints.tablet;
+  const isTablet = width >= Breakpoints.tablet && width < Breakpoints.desktop;
+  const useIconTabs = isMobile || isTablet;
 
   const handleLogout = () => {
     usersService.logOut();
@@ -50,12 +52,18 @@ export function AppSidebar() {
   };
 
   return (
-    <View style={[styles.rail, isMobile && styles.mobileBar, isMobile && { paddingBottom: safeAreaInsets.bottom + 8 }]}>
+    <View
+      style={[
+        styles.rail,
+        isTablet && styles.tabletRail,
+        isMobile && styles.mobileBar,
+        isMobile && { paddingBottom: safeAreaInsets.bottom + 8 },
+      ]}>
       <View style={[styles.navGroup, isMobile && styles.navGroupMobile]}>
         {!isMobile && (
           <Image
             source={require('@/assets/images/logo_starwindow.png')}
-            style={styles.railLogo}
+            style={[styles.railLogo, isTablet && styles.railLogoTablet]}
             resizeMode="contain"
           />
         )}
@@ -67,9 +75,9 @@ export function AppSidebar() {
               key={item.href}
               accessibilityLabel={item.label}
               onPress={() => router.push(item.href)}
-              style={[styles.railTab, isMobile && styles.mobileTab, active && styles.railTabActive]}>
-              {active && <View style={[styles.railTabIndicator, isMobile && styles.mobileTabIndicator]} />}
-              {isMobile ? (
+              style={[styles.railTab, isTablet && styles.tabletTab, isMobile && styles.mobileTab, active && styles.railTabActive]}>
+              {active && <View style={[styles.railTabIndicator, isTablet && styles.tabletTabIndicator, isMobile && styles.mobileTabIndicator]} />}
+              {useIconTabs ? (
                 <SymbolView
                   name={item.icon}
                   size={24}
@@ -85,26 +93,24 @@ export function AppSidebar() {
         })}
       </View>
 
-      <Pressable
-        onPress={handleLogout}
-        accessibilityLabel="Logout"
-        onHoverIn={() => setLogoutHovered(true)}
-        onHoverOut={() => setLogoutHovered(false)}
-        style={[styles.railTab, isMobile && styles.mobileTab, logoutHovered && styles.logoutTabHovered]}>
-        {isMobile ? (
-          <SymbolView
-            name={{
-              ios: 'rectangle.portrait.and.arrow.right',
-              android: 'logout',
-              web: 'logout',
-            }}
-            size={24}
-            tintColor={Palette.accentRed}
-          />
-        ) : (
-          <Text style={styles.logoutLabel}>Logout</Text>
-        )}
-      </Pressable>
+      {!isMobile ? (
+        <Pressable
+          onPress={handleLogout}
+          accessibilityLabel="Logout"
+          onHoverIn={() => setLogoutHovered(true)}
+          onHoverOut={() => setLogoutHovered(false)}
+          style={[styles.railTab, isTablet && styles.tabletTab, logoutHovered && styles.logoutTabHovered]}>
+          {isTablet ? (
+            <SymbolView
+              name={{ ios: 'rectangle.portrait.and.arrow.right', android: 'logout', web: 'logout' }}
+              size={24}
+              tintColor={Palette.accentRed}
+            />
+          ) : (
+            <Text style={styles.logoutLabel}>Logout</Text>
+          )}
+        </Pressable>
+      ) : null}
     </View>
   );
 }
@@ -118,6 +124,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingVertical: 16,
+  },
+  tabletRail: {
+    width: 76,
   },
   mobileBar: {
     width: '100%',
@@ -148,6 +157,11 @@ const styles = StyleSheet.create({
     height: 72,
     marginBottom: 16,
   },
+  railLogoTablet: {
+    width: 48,
+    height: 48,
+    marginBottom: 18,
+  },
   railTab: {
     width: dvw(108),
     height: dvh(44),
@@ -155,6 +169,12 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     justifyContent: 'center',
     paddingHorizontal: 14,
+  },
+  tabletTab: {
+    width: 52,
+    height: 52,
+    alignItems: 'center',
+    paddingHorizontal: 0,
   },
   mobileTab: {
     flex: 1,
@@ -178,6 +198,12 @@ const styles = StyleSheet.create({
     height: dvh(20),
     backgroundColor: Palette.accent,
     borderRadius: 3,
+  },
+  tabletTabIndicator: {
+    left: -12,
+    width: 3,
+    height: 24,
+    marginTop: -12,
   },
   mobileTabIndicator: {
     left: '50%' as any,

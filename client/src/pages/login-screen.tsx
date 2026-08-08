@@ -193,7 +193,7 @@ export default function LoginScreen() {
               </TouchableOpacity>
             </View>
 
-            <TouchableOpacity style={styles.forgotRow}>
+            <TouchableOpacity style={[styles.forgotRow, styles.hiddenForgotButton]}>
               <Text style={styles.forgot}>Forgot Password?</Text>
             </TouchableOpacity>
 
@@ -358,6 +358,9 @@ const styles = StyleSheet.create({
   forgotRow: {
     alignSelf: 'flex-end',
     marginBottom: 10,
+  },
+  hiddenForgotButton: {
+    display: 'none',
   },
   forgot: {
     color: Palette.accent,

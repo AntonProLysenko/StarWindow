@@ -1,11 +1,11 @@
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Platform, ScrollView, StyleSheet, View } from 'react-native';
+import { Platform, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { StarMap, type RocketLaunch, type StargazingSpot } from '@/components/star-map';
 import { ThemedText } from '@/components/themed-text';
-import { BottomTabInset, Palette, Spacing } from '@/constants/tokens';
+import { BottomTabInset, Breakpoints, Palette, Radius, Spacing } from '@/constants/tokens';
 import { fetchLaunches } from '@/lib/astronomy';
 import { fetchBestSpot, type BestSpot } from '@/lib/map-api';
 import { getOrRequestUserLocation } from '@/utilities/user-location-service';
@@ -18,6 +18,8 @@ const CITY_ZOOM = 11;
 // Default best-nearby-spot search radius (miles) + slider debounce.
 const DEFAULT_RADIUS = 25;
 const RADIUS_DEBOUNCE_MS = 300;
+const MOBILE_WEB_NAV_HEIGHT = 88;
+const MOBILE_HEADER_HEIGHT = 92;
 
 // Placeholder data until a backend feed lands. Bortle: 1 = pristine dark sky.
 const SAMPLE_SPOTS: StargazingSpot[] = [
@@ -41,6 +43,8 @@ const SAMPLE_SPOTS: StargazingSpot[] = [
 
 export default function MapScreen() {
   const safeAreaInsets = useSafeAreaInsets();
+  const { width, height } = useWindowDimensions();
+  const isMobile = width < Breakpoints.tablet;
   const [center, setCenter] = useState<[number, number] | undefined>(undefined);
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [launches, setLaunches] = useState<RocketLaunch[]>([]);
@@ -109,9 +113,16 @@ export default function MapScreen() {
     };
   }, [userLocation, radiusMiles]);
 
+  const mobileBottomClearance =
+    Platform.OS === 'web' && isMobile ? MOBILE_WEB_NAV_HEIGHT + safeAreaInsets.bottom : 0;
+  const mobileMapHeight = Math.max(
+    height - mobileBottomClearance - safeAreaInsets.top - MOBILE_HEADER_HEIGHT,
+    320
+  );
+
   const insets = {
     ...safeAreaInsets,
-    bottom: safeAreaInsets.bottom + BottomTabInset + Spacing.md,
+    bottom: safeAreaInsets.bottom + BottomTabInset + mobileBottomClearance + Spacing.md,
   };
 
   const contentPlatformStyle = Platform.select({
@@ -123,20 +134,29 @@ export default function MapScreen() {
     },
     web: {
       paddingTop: Spacing.sm,
-      paddingBottom: Spacing.sm,
+      paddingBottom: isMobile ? Spacing.md : Spacing.sm,
     },
   });
 
   return (
     <ScrollView
-      style={styles.scrollView}
+      style={[styles.scrollView, isMobile && styles.scrollViewMobile]}
       scrollEnabled={Platform.OS !== 'web'}
       contentInset={insets}
-      contentContainerStyle={[styles.contentContainer, contentPlatformStyle]}>
-      <View style={styles.container}>
-        <View style={styles.header}>
-          <ThemedText type="subtitle">Stargazing Spots</ThemedText>
-          <ThemedText themeColor="textMuted" style={styles.planningNote}>
+      contentContainerStyle={[
+        styles.contentContainer,
+        isMobile && styles.contentContainerMobile,
+        contentPlatformStyle,
+      ]}>
+      <View style={[styles.container, isMobile && styles.containerMobile]}>
+        <View style={[styles.header, isMobile && styles.headerMobile]}>
+          <ThemedText type="subtitle" style={isMobile && styles.titleMobile}>
+            Stargazing Spots
+          </ThemedText>
+          <ThemedText
+            themeColor="textMuted"
+            style={[styles.planningNote, isMobile && styles.planningNoteMobile]}
+            numberOfLines={isMobile ? 2 : undefined}>
             Planning scores show a spot&rsquo;s stargazing potential — not the current
             time of day. Check the dashboard for how good viewing is right now.
           </ThemedText>
@@ -154,6 +174,7 @@ export default function MapScreen() {
           radiusMiles={radiusMiles}
           onRadiusChange={setRadiusMiles}
           immersive
+          style={isMobile ? [styles.mapFrameMobile, { height: mobileMapHeight }] : undefined}
         />
       </View>
     </ScrollView>
@@ -165,9 +186,16 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: Palette.bgVoid,
   },
+  scrollViewMobile: {
+    backgroundColor: Palette.bgDeep,
+  },
   contentContainer: {
     flexDirection: 'row',
     justifyContent: 'center',
+  },
+  contentContainerMobile: {
+    minHeight: '100%' as any,
+    alignItems: 'stretch',
   },
   container: {
     flex: 1,
@@ -175,8 +203,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.sm,
     gap: Spacing.sm,
   },
+  containerMobile: {
+    paddingHorizontal: 10,
+    paddingBottom: Spacing.sm,
+    gap: 10,
+  },
   header: {
     alignItems: 'center',
+  },
+  headerMobile: {
+    alignItems: 'flex-start',
+    paddingHorizontal: 4,
+    gap: 2,
+  },
+  titleMobile: {
+    fontSize: 22,
+    lineHeight: 27,
   },
   planningNote: {
     marginTop: Spacing.xs,
@@ -184,5 +226,18 @@ const styles = StyleSheet.create({
     lineHeight: 16,
     textAlign: 'center',
     maxWidth: 520,
+  },
+  planningNoteMobile: {
+    marginTop: 0,
+    maxWidth: '100%',
+    fontSize: 11,
+    lineHeight: 15,
+    textAlign: 'left',
+  },
+  mapFrameMobile: {
+    borderRadius: Radius.md,
+    borderColor: Palette.border,
+    shadowOpacity: 0.08,
+    shadowRadius: 14,
   },
 });

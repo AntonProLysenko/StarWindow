@@ -9,12 +9,13 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from 'react-native';
 
 import { EventCard } from '@/components/events/event-card';
 import { EventModal } from '@/components/events/event-modal';
-import { Palette, Radius } from '@/constants/tokens';
+import { Breakpoints, Palette, Radius } from '@/constants/tokens';
 import { fetchSavedUserEvents, type SavedUserEvent } from '@/lib/events-api';
 import * as eventTypesAPI from '@/utilities/event-types-api';
 import type { EventType } from '@/utilities/event-types-api';
@@ -60,7 +61,20 @@ function sameIds(a: number[], b: number[]) {
   return sortedA.every((id, index) => id === sortedB[index]);
 }
 
+function getEventNavigationKey(event: SavedUserEvent) {
+  return [
+    event.category,
+    String(event.id),
+    String(event.event_id),
+    String(event.user_event_id),
+    event.date ?? '',
+    event.name,
+  ].join('|');
+}
+
 export default function ProfileScreen() {
+  const { width } = useWindowDimensions();
+  const isMobile = width < Breakpoints.tablet;
   const router = useRouter();
   const [user, setUser] = useState<usersService.AuthUser | null>(() => usersService.getUser());
   const [activeTab, setActiveTab] = useState<ProfileTab>('saved-events');
@@ -151,8 +165,25 @@ export default function ProfileScreen() {
     );
   };
 
+  function handleNavigateSavedEvent(direction: 'next' | 'previous') {
+    if (!selectedSavedEvent || savedEvents.length === 0) return false;
+    const selectedKey = getEventNavigationKey(selectedSavedEvent);
+    const currentIndex = savedEvents.findIndex((event) => getEventNavigationKey(event) === selectedKey);
+    if (currentIndex < 0) return false;
+    const nextIndex = direction === 'next' ? currentIndex + 1 : currentIndex - 1;
+    const nextEvent = savedEvents[nextIndex];
+    if (!nextEvent) return false;
+    setSelectedSavedEvent(nextEvent);
+    return true;
+  }
+
   const progressLabel = getUserLevelProgressLabel(user);
   const progressPercent = getUserLevelProgressPercent(user);
+
+  const handleLogout = () => {
+    usersService.logOut();
+    router.replace('/');
+  };
 
   return (
     <SafeAreaView style={styles.app}>
@@ -174,7 +205,11 @@ export default function ProfileScreen() {
         ))}
       </View>
 
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
+      <ScrollView
+        style={[styles.scroll, isMobile && activeTab === 'saved-events' && styles.mobileSnapScroll]}
+        contentContainerStyle={styles.content}
+        decelerationRate={isMobile && activeTab === 'saved-events' ? 'fast' : 'normal'}
+        disableIntervalMomentum={isMobile && activeTab === 'saved-events'}>
         <View style={styles.header}>
           <View style={styles.avatar}>
             <Text style={styles.avatarText}>{getInitials(user)}</Text>
@@ -191,6 +226,21 @@ export default function ProfileScreen() {
                 <Text style={styles.levelMeta}>{progressLabel}</Text>
               </View>
             ) : null}
+            <Pressable
+              onPress={handleLogout}
+              accessibilityLabel="Logout"
+              style={styles.profileLogoutButton}>
+              <SymbolView
+                name={{
+                  ios: 'rectangle.portrait.and.arrow.right',
+                  android: 'logout',
+                  web: 'logout',
+                }}
+                size={16}
+                tintColor={Palette.accentRed}
+              />
+              <Text style={styles.profileLogoutText}>Logout</Text>
+            </Pressable>
           </View>
         </View>
 
@@ -227,6 +277,7 @@ export default function ProfileScreen() {
         <EventModal
           event={selectedSavedEvent}
           onClose={() => setSelectedSavedEvent(null)}
+          onNavigateEvent={handleNavigateSavedEvent}
           onSavedEventUpdated={handleSavedEventUpdated}
           userId={user?.user_id ?? null}
           userLat={userLat}
@@ -634,6 +685,11 @@ const styles = StyleSheet.create({
   scroll: {
     flex: 1,
   },
+  mobileSnapScroll: {
+    scrollSnapType: 'y proximity',
+    overscrollBehaviorY: 'contain',
+    WebkitOverflowScrolling: 'touch',
+  } as any,
   content: {
     padding: 24,
     gap: 20,
@@ -705,6 +761,25 @@ const styles = StyleSheet.create({
     color: Palette.textTertiary,
     fontSize: 12,
     fontWeight: '800',
+  },
+  profileLogoutButton: {
+    marginTop: 12,
+    minHeight: 36,
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 12,
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    borderColor: Palette.accentRed,
+    backgroundColor: Palette.accentRed + '12',
+  },
+  profileLogoutText: {
+    color: Palette.accentRed,
+    fontSize: 12,
+    lineHeight: 15,
+    fontWeight: '900',
   },
   tabBar: {
     flexDirection: 'row',

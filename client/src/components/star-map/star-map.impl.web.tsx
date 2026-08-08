@@ -2,7 +2,7 @@ import { Asset } from 'expo-asset';
 import { router } from 'expo-router';
 import { divIcon } from 'leaflet';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import {
   CircleMarker,
   MapContainer,
@@ -13,7 +13,7 @@ import {
   useMap,
 } from 'react-leaflet';
 
-import { Palette, Radius } from '@/constants/tokens';
+import { Breakpoints, Palette, Radius } from '@/constants/tokens';
 import type { RocketLaunch, StarMapProps, StargazingSpot } from './types';
 import { ViewingScoreGauge } from './viewing-score-gauge.web';
 
@@ -120,24 +120,26 @@ function LayersPanel({
   onToggle: (key: keyof LayerState) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const { width } = useWindowDimensions();
+  const isMobile = width < Breakpoints.tablet;
 
   return (
-    <View style={styles.panelWrap}>
+    <View style={[styles.panelWrap, isMobile && styles.panelWrapMobile]}>
       <Pressable
-        style={styles.panelButton}
+        style={[styles.panelButton, isMobile && styles.panelButtonMobile]}
         onPress={() => setOpen((o) => !o)}
         accessibilityLabel="Map layers">
         <Text style={styles.panelButtonIcon}>{open ? '›' : '‹'}</Text>
       </Pressable>
 
       {open && (
-        <View style={styles.panelCard}>
+        <View style={[styles.panelCard, isMobile && styles.panelCardMobile]}>
           <Text style={styles.panelTitle}>LAYERS</Text>
           {LAYER_DEFS.map(({ key, label }) => {
             const on = layers[key];
             return (
               <Pressable key={key} style={styles.row} onPress={() => onToggle(key)}>
-                <Text style={styles.rowLabel}>{label}</Text>
+                <Text style={[styles.rowLabel, isMobile && styles.rowLabelMobile]}>{label}</Text>
                 <View style={[styles.pill, on && styles.pillOn]}>
                   <View style={[styles.knob, on && styles.knobOn]} />
                 </View>
@@ -160,8 +162,11 @@ function RadiusSlider({
   miles: number;
   onChange: (miles: number) => void;
 }) {
+  const { width } = useWindowDimensions();
+  const isMobile = width < Breakpoints.tablet;
+
   return (
-    <View style={styles.sliderWrap}>
+    <View style={[styles.sliderWrap, isMobile && styles.sliderWrapMobile]}>
       <View style={styles.sliderHeader}>
         <Text style={styles.sliderTitle}>SEARCH RADIUS</Text>
         <Text style={styles.sliderValue}>{Math.round(miles)} mi</Text>
@@ -421,6 +426,10 @@ const styles = StyleSheet.create({
     zIndex: 1100,
     gap: 8,
   },
+  panelWrapMobile: {
+    top: 10,
+    right: 10,
+  },
   panelButton: {
     width: 34,
     height: 34,
@@ -430,6 +439,10 @@ const styles = StyleSheet.create({
     backgroundColor: Palette.bgDeep,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  panelButtonMobile: {
+    width: 40,
+    height: 40,
   },
   panelButtonIcon: {
     color: Palette.accent,
@@ -450,6 +463,11 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.15,
     shadowRadius: 16,
   },
+  panelCardMobile: {
+    minWidth: 196,
+    maxWidth: 240,
+    padding: 10,
+  },
   panelTitle: {
     color: Palette.textMuted,
     fontSize: 10,
@@ -466,6 +484,10 @@ const styles = StyleSheet.create({
   rowLabel: {
     color: Palette.textSecondary,
     fontSize: 13,
+  },
+  rowLabelMobile: {
+    fontSize: 12,
+    lineHeight: 16,
   },
   pill: {
     width: dvw(34),
@@ -507,6 +529,13 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.15,
     shadowRadius: 16,
+  },
+  sliderWrapMobile: {
+    left: 10,
+    right: 10,
+    bottom: 10,
+    width: 'auto' as any,
+    padding: 10,
   },
   sliderHeader: {
     flexDirection: 'row',

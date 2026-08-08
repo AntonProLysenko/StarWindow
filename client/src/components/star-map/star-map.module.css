@@ -104,3 +104,37 @@
 :global(.leaflet-control-attribution a) {
   color: #336688;
 }
+
+@media (max-width: 767px) {
+  .mapContainer {
+    border-radius: 14px;
+  }
+
+  .rocketMarker {
+    width: 26px;
+    height: 26px;
+  }
+
+  :global(.leaflet-control-zoom) {
+    margin-left: 10px;
+    margin-top: 10px;
+  }
+
+  :global(.leaflet-bar a) {
+    width: 34px;
+    height: 34px;
+    line-height: 34px;
+    font-size: 18px;
+  }
+
+  :global(.leaflet-popup) {
+    max-width: calc(100dvw - 48px);
+  }
+
+  :global(.leaflet-popup-content) {
+    width: min(260px, calc(100dvw - 72px)) !important;
+    margin: 12px 14px;
+    font-size: 13px;
+    line-height: 1.35;
+  }
+}

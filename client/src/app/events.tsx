@@ -6,26 +6,27 @@
 // phase 2 will route to a per-event detail page.
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { SymbolView } from 'expo-symbols';
 import {
   ActivityIndicator,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 
 import { EventCard } from '@/components/events/event-card';
 import { EventModal } from '@/components/events/event-modal';
-import { Palette, Radius, Spacing } from '@/constants/tokens';
+import { Breakpoints, Palette, Radius, Spacing } from '@/constants/tokens';
 import { useSharedEvents } from '@/context/events-context';
 import { getEventEmoji } from '@/lib/event-colors';
 import { fetchSavedUserEvents, type EventListItem } from '@/lib/events-api';
 import { ALL_EVENT_FILTER, EVENT_FILTER_OPTIONS, filterEvents } from '@/lib/event-icons';
 import { getOrRequestUserLocation } from '@/utilities/user-location-service';
 import { getUser } from '@/utilities/users-service';
-import { dvw } from '@/utilities/responsive-dimensions';
 
 const PAST_DAYS_TO_SHOW = 365;
 const FUTURE_DAYS_TO_SHOW = 365;
@@ -227,6 +228,16 @@ function getEventTime(event: EventListItem) {
   return Number.isNaN(time) ? Infinity : time;
 }
 
+function getEventNavigationKey(event: EventListItem) {
+  return [
+    event.category,
+    String(event.id),
+    String(event.event_id),
+    event.date ?? '',
+    event.name,
+  ].join('|');
+}
+
 function findRequestedEvent(events: EventListItem[], params: EventRouteParams) {
   const eventId = firstParam(params.eventId);
   const category = firstParam(params.category);
@@ -294,10 +305,13 @@ function buildDashboardPreviewEvent(params: EventRouteParams): EventListItem | n
 }
 
 export default function EventsScreen() {
+  const { width } = useWindowDimensions();
+  const isMobile = width < Breakpoints.tablet;
   const routeParams = useLocalSearchParams<EventRouteParams>();
   const routeEventKey = getEventRouteKey(routeParams);
   const { events, isLoading: loading, error } = useSharedEvents();
-  const [activeType, setActiveType] = useState<string>(ALL_EVENT_FILTER);
+  const [activeTypes, setActiveTypes] = useState<string[]>([]);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const listRef = useRef<ScrollView>(null);
   const [upcomingAnchorY, setUpcomingAnchorY] = useState<number | null>(null);
   const [didAlignToUpcoming, setDidAlignToUpcoming] = useState(false);
@@ -359,13 +373,23 @@ export default function EventsScreen() {
   }, [events]);
 
   useEffect(() => {
-    const canonicalActiveType = getCanonicalFilterOption(activeType);
-    if (canonicalActiveType !== activeType && filterOptions.includes(canonicalActiveType)) {
-      setActiveType(canonicalActiveType);
-    }
-  }, [activeType, filterOptions]);
+    setActiveTypes((current) => {
+      const canonical = current.map((type) => getCanonicalFilterOption(type));
+      const deduped = [...new Set(canonical.filter((type) => type !== ALL_EVENT_FILTER))];
+      if (deduped.length === current.length && deduped.every((type, index) => type === current[index])) {
+        return current;
+      }
+      return deduped;
+    });
+  }, [filterOptions]);
 
-  const visibleEvents = useMemo(() => filterEvents(events, activeType), [events, activeType]);
+  const visibleEvents = useMemo(() => {
+    if (activeTypes.length === 0) return events;
+    return events.filter((event) => activeTypes.some((filter) => eventMatchesFilter(event, filter)));
+  }, [events, activeTypes]);
+  const hasActiveFilter = activeTypes.length > 0;
+  const activeFilterSummary = activeTypes.map(getFilterLabel).join(', ');
+  const filterToggleLabel = hasActiveFilter ? `Filters (${activeTypes.length})` : 'Filters';
 
   const { pastEvents, upcomingEvents } = useMemo(() => {
     const now = Date.now();
@@ -375,10 +399,27 @@ export default function EventsScreen() {
     };
   }, [visibleEvents]);
 
+  const displayedEvents = useMemo(
+    () => [...pastEvents, ...upcomingEvents],
+    [pastEvents, upcomingEvents]
+  );
+
+  function handleNavigateSelectedEvent(direction: 'next' | 'previous') {
+    if (!selectedEvent || displayedEvents.length === 0) return false;
+    const selectedKey = getEventNavigationKey(selectedEvent);
+    const currentIndex = displayedEvents.findIndex((event) => getEventNavigationKey(event) === selectedKey);
+    if (currentIndex < 0) return false;
+    const nextIndex = direction === 'next' ? currentIndex + 1 : currentIndex - 1;
+    const nextEvent = displayedEvents[nextIndex];
+    if (!nextEvent) return false;
+    setSelectedEvent(nextEvent);
+    return true;
+  }
+
   useEffect(() => {
     setDidAlignToUpcoming(false);
     setUpcomingAnchorY(null);
-  }, [activeType]);
+  }, [activeTypes]);
 
   function alignToUpcoming() {
     if (didAlignToUpcoming || upcomingAnchorY == null || loading) return;
@@ -400,11 +441,11 @@ export default function EventsScreen() {
     const eventToOpen = matchedEvent ?? buildDashboardPreviewEvent(routeParams);
 
     if (eventToOpen) {
-      setActiveType(eventToOpen.type);
+      setActiveTypes([getCanonicalFilterOption(eventToOpen.type)]);
       setSelectedEvent(eventToOpen);
       setOpenedRouteEventKey(routeEventKey);
     } else if (requestedType) {
-      setActiveType(requestedType);
+      setActiveTypes([getCanonicalFilterOption(requestedType)]);
       setOpenedRouteEventKey(routeEventKey);
     }
   }, [events, loading, openedRouteEventKey, routeEventKey, routeParams]);
@@ -430,25 +471,70 @@ export default function EventsScreen() {
     return savedEventIds.has(String(event.event_id));
   }
 
+  function handleFilterSelect(option: string) {
+    if (option === ALL_EVENT_FILTER) {
+      clearFilters();
+      return;
+    }
+
+    setActiveTypes((current) =>
+      current.includes(option)
+        ? current.filter((type) => type !== option)
+        : [...current, option]
+    );
+  }
+
+  function clearFilters() {
+    setActiveTypes([]);
+    setFiltersOpen(false);
+  }
+
   return (
     <View style={styles.screen}>
       <View style={styles.header}>
-        <Text style={styles.eyebrow}>WHAT&apos;S COMING UP</Text>
-        <Text style={styles.title}>Events</Text>
+        <View style={styles.headerCopy}>
+          <Text style={styles.eyebrow}>WHAT&apos;S COMING UP</Text>
+          <Text style={styles.title}>Events</Text>
+        </View>
+        {!loading && !error && events.length > 0 ? (
+          <Pressable
+            onPress={() => setFiltersOpen((open) => !open)}
+            style={[styles.filterToggle, filtersOpen && styles.filterToggleActive]}
+            accessibilityLabel={filtersOpen ? 'Hide event filters' : 'Show event filters'}>
+            <SymbolView
+              name={{
+                ios: 'line.3.horizontal.decrease.circle',
+                android: 'filter_list',
+                web: 'filter_list',
+              }}
+              size={18}
+              tintColor={filtersOpen || hasActiveFilter ? Palette.accent : Palette.textSecondary}
+            />
+            <Text style={[styles.filterToggleText, (filtersOpen || hasActiveFilter) && styles.filterToggleTextActive]}>
+              {filterToggleLabel}
+            </Text>
+          </Pressable>
+        ) : null}
       </View>
 
       {/* Filter bar — hidden until we have data to derive types from.
           Wraps onto additional rows rather than scrolling off-screen. */}
-      {!loading && !error && events.length > 0 && (
-        <View style={styles.filterBar}>
-          {filterOptions.map((option) => {
-            const active = option === activeType;
-            return (
-              <Pressable
-                key={option}
-                onPress={() => setActiveType(option)}
-                style={[styles.filterPill, active && styles.filterPillActive]}>
-                <Text style={[styles.filterPillText, active && styles.filterPillTextActive]}>
+      {!loading && !error && events.length > 0 && filtersOpen ? (
+        <View style={styles.filterPanel}>
+          <Text style={styles.filterPanelTitle}>Filter by event type</Text>
+          <ScrollView
+            style={styles.filterScroll}
+            contentContainerStyle={styles.filterBar}
+            nestedScrollEnabled
+            showsVerticalScrollIndicator={false}>
+            {filterOptions.map((option) => {
+              const active = option === ALL_EVENT_FILTER ? activeTypes.length === 0 : activeTypes.includes(option);
+              return (
+                <Pressable
+                  key={option}
+                  onPress={() => handleFilterSelect(option)}
+                  style={[styles.filterPill, active && styles.filterPillActive]}>
+                  <Text style={[styles.filterPillText, active && styles.filterPillTextActive]}>
                   {option === ALL_EVENT_FILTER 
                     ? `✦ ${option}` 
                     : `${getEventEmoji({
@@ -456,12 +542,24 @@ export default function EventsScreen() {
                         type: option,
                         name: option,
                       })} ${option}`}
-                </Text>
-              </Pressable>
-            );
-          })}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
         </View>
-      )}
+      ) : null}
+
+      {!loading && !error && hasActiveFilter ? (
+        <View style={styles.appliedFilterBar}>
+          <Text style={styles.appliedFilterText} numberOfLines={1}>
+            Showing {activeFilterSummary}
+          </Text>
+          <Pressable onPress={clearFilters} style={styles.clearFilterButton} accessibilityLabel="Clear event filters">
+            <Text style={styles.clearFilterText}>Clear</Text>
+          </Pressable>
+        </View>
+      ) : null}
 
       {loading ? (
         <View style={styles.centerState}>
@@ -480,14 +578,16 @@ export default function EventsScreen() {
           <Text style={styles.stateText}>
             {events.length === 0
               ? 'There are no upcoming events right now. Check back soon.'
-              : `No ${activeType} events coming up. Try a different filter.`}
+              : `No events match ${activeFilterSummary}. Try a different filter.`}
           </Text>
         </View>
       ) : (
         <ScrollView
           ref={listRef}
-          style={styles.list}
+          style={[styles.list, isMobile && styles.mobileSnapScroll]}
           contentContainerStyle={styles.listContent}
+          decelerationRate={isMobile ? 'fast' : 'normal'}
+          disableIntervalMomentum={isMobile}
           showsVerticalScrollIndicator={false}
           onContentSizeChange={alignToUpcoming}>
           {pastEvents.length > 0 ? (
@@ -527,6 +627,7 @@ export default function EventsScreen() {
         <EventModal
           event={selectedEvent}
           onClose={() => setSelectedEvent(null)}
+          onNavigateEvent={handleNavigateSelectedEvent}
           onSavedStateChange={handleSavedStateChange}
           userId={userId}
           userLat={userLat}
@@ -555,6 +656,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     paddingTop: 32,
     paddingBottom: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: Spacing.md,
+  },
+  headerCopy: {
+    flex: 1,
+    minWidth: 0,
   },
   eyebrow: {
     fontSize: 11,
@@ -569,12 +678,56 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: Palette.textPrimary,
   },
+  filterToggle: {
+    minHeight: 40,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 13,
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    borderColor: Palette.borderSoft,
+    backgroundColor: Palette.surface,
+  },
+  filterToggleActive: {
+    borderColor: Palette.accent,
+    backgroundColor: Palette.accent + '12',
+  },
+  filterToggleText: {
+    color: Palette.textSecondary,
+    fontSize: 12,
+    lineHeight: 15,
+    fontWeight: '800',
+  },
+  filterToggleTextActive: {
+    color: Palette.accent,
+  },
+  filterPanel: {
+    marginHorizontal: 24,
+    marginBottom: Spacing.sm,
+    padding: Spacing.md,
+    maxHeight: 260,
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    borderColor: Palette.borderSoft,
+    backgroundColor: Palette.bgDeep,
+    gap: Spacing.sm,
+  },
+  filterPanelTitle: {
+    color: Palette.textTertiary,
+    fontSize: 11,
+    lineHeight: 14,
+    fontWeight: '800',
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+  },
+  filterScroll: {
+    flexGrow: 0,
+  },
   filterBar: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: Spacing.sm,
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.sm,
   },
   filterPill: {
     paddingVertical: 7,
@@ -596,16 +749,58 @@ const styles = StyleSheet.create({
   filterPillTextActive: {
     color: Palette.accent,
   },
+  appliedFilterBar: {
+    marginHorizontal: 24,
+    marginBottom: Spacing.sm,
+    minHeight: 42,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: Spacing.sm,
+    paddingVertical: 7,
+    paddingHorizontal: 12,
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    borderColor: Palette.accent + '40',
+    backgroundColor: Palette.accent + '12',
+  },
+  appliedFilterText: {
+    flex: 1,
+    minWidth: 0,
+    color: Palette.textSecondary,
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '700',
+  },
+  clearFilterButton: {
+    minHeight: 28,
+    justifyContent: 'center',
+    paddingHorizontal: 10,
+    borderRadius: Radius.sm,
+    borderWidth: 1,
+    borderColor: Palette.accent,
+  },
+  clearFilterText: {
+    color: Palette.accent,
+    fontSize: 11,
+    lineHeight: 13,
+    fontWeight: '800',
+  },
   list: {
     flex: 1,
   },
+  mobileSnapScroll: {
+    scrollSnapType: 'y mandatory',
+    overscrollBehaviorY: 'contain',
+    WebkitOverflowScrolling: 'touch',
+  } as any,
   listContent: {
     paddingHorizontal: 24,
     paddingTop: 4,
     paddingBottom: 48,
     gap: 12,
     width: '100%',
-    maxWidth: dvw(800),
+    maxWidth: 720,
     alignSelf: 'center',
   },
   timelineSection: {

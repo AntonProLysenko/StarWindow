@@ -1,4 +1,5 @@
 import React, { memo, useEffect, useMemo, useState } from 'react';
+import { SymbolView } from 'expo-symbols';
 import { Image, Pressable, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -7,7 +8,7 @@ import { EventModal } from '@/components/events/event-modal';
 import { ShootingStar } from '@/components/shooting-star';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Palette, Radius, Spacing } from '@/constants/tokens';
+import { Breakpoints, Palette, Radius, Spacing } from '@/constants/tokens';
 import { useSharedEvents } from '@/context/events-context';
 import { useVisibleBodyEvents } from '@/hooks/use-visible-body-events';
 import { ALL_EVENT_FILTER, EVENT_FILTER_OPTIONS, filterEvents, getEventIconByType } from '@/lib/event-icons';
@@ -24,7 +25,6 @@ import { getOrRequestUserLocation } from '@/utilities/user-location-service';
 import { getToken, getUser, getUserEventTypes } from '@/utilities/users-service';
 import { dvw, dvh } from '@/utilities/responsive-dimensions';
 
-const categories = EVENT_FILTER_OPTIONS;
 const MONTHS_BEHIND_TO_FETCH = 1;
 const MONTHS_AHEAD_TO_FETCH = 1;
 const CALENDAR_GRID_MAX_HEIGHT = 840;
@@ -99,6 +99,25 @@ function getCalendarFetchWindow(year: number, month: number) {
   };
 }
 
+function getEventListNavigationKey(event: EventListItem) {
+  return [
+    event.category,
+    String(event.id),
+    String(event.event_id),
+    event.date ?? '',
+    event.name,
+  ].join('|');
+}
+
+function getCalendarNavigationKey(event: CalendarEvent) {
+  return getEventListNavigationKey(calendarEventToEventListItem(event));
+}
+
+function getCalendarEventTime(event: CalendarEvent) {
+  const time = new Date(event.startDate).getTime();
+  return Number.isNaN(time) ? Infinity : time;
+}
+
 function normalizeEventTypeName(value?: string | null) {
   return (value ?? '').trim().toLowerCase().replace(/\s+/g, ' ');
 }
@@ -123,6 +142,19 @@ function eventMatchesSelectedTypes(event: CalendarEvent, selectedTypeNames: stri
   const selectedAliases = selectedTypeNames.flatMap((typeName) => [...getEventTypeAliases(typeName)]);
 
   return selectedAliases.some((selectedType) => eventType === selectedType);
+}
+
+function eventMatchesFilter(event: CalendarEvent, filter: string) {
+  return filterEvents([event], filter).length > 0;
+}
+
+function getFilterLabel(filter: string) {
+  if (filter === ALL_EVENT_FILTER) return '✦ All';
+  return `${getEventEmoji({
+    category: filter === 'Rocket Launch' ? 'launch' : 'event',
+    type: filter,
+    name: filter,
+  })} ${filter}`;
 }
 
 const CalendarBackdrop = memo(function CalendarBackdrop() {
@@ -165,7 +197,8 @@ export default function CalendarScreen() {
   const [browserCoords, setBrowserCoords] = useState<{ latitude: number; longitude: number } | null>(null);
   const [locationNotice, setLocationNotice] = useState('Requesting browser location for visible sky events.');
   const [selectedEvent, setSelectedEvent] = useState<EventListItem | null>(null);
-  const [activeFilter, setActiveFilter] = useState(ALL_EVENT_FILTER);
+  const [activeFilters, setActiveFilters] = useState<string[]>([]);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [selectedProfileEventTypes, setSelectedProfileEventTypes] = useState<string[]>([]);
   const [didLoadProfileEventTypes, setDidLoadProfileEventTypes] = useState(false);
   const [savedEventIds, setSavedEventIds] = useState<Set<string>>(() => new Set());
@@ -297,10 +330,15 @@ export default function CalendarScreen() {
     };
   }, []);
 
-  const filteredEvents = useMemo(
-    () => filterEvents(userFilteredEvents, activeFilter),
-    [activeFilter, userFilteredEvents]
-  );
+  const filteredEvents = useMemo(() => {
+    if (activeFilters.length === 0) return userFilteredEvents;
+    return userFilteredEvents.filter((event) =>
+      activeFilters.some((filter) => eventMatchesFilter(event, filter))
+    );
+  }, [activeFilters, userFilteredEvents]);
+  const hasActiveFilter = activeFilters.length > 0;
+  const activeFilterSummary = activeFilters.map(getFilterLabel).join(', ');
+  const filterToggleLabel = hasActiveFilter ? `Filters (${activeFilters.length})` : 'Filters';
 
   const selectedDayEvents = useMemo(
     () => getCalendarEventsForDate(filteredEvents, selectedDate),
@@ -310,7 +348,17 @@ export default function CalendarScreen() {
     () => getCalendarEventsForMonth(filteredEvents, currentYear, currentMonth),
     [filteredEvents, currentYear, currentMonth]
   );
+  const calendarNavigationEvents = useMemo(
+    () =>
+      [...filteredEvents].sort((left, right) => {
+        const timeDiff = getCalendarEventTime(left) - getCalendarEventTime(right);
+        if (timeDiff !== 0) return timeDiff;
+        return left.title.localeCompare(right.title);
+      }),
+    [filteredEvents]
+  );
 
+  const isMobile = width < Breakpoints.tablet;
   const isVertical = width < 900;
   const monthName = useMemo(
     () => new Date(currentYear, currentMonth).toLocaleDateString('en-US', {
@@ -324,6 +372,32 @@ export default function CalendarScreen() {
     setCurrentYear(year);
     setCurrentMonth(month);
     setLoadedWindow(getCalendarFetchWindow(year, month));
+  }
+
+  function handleNavigateSelectedEvent(direction: 'next' | 'previous') {
+    if (!selectedEvent || calendarNavigationEvents.length === 0) return false;
+
+    const selectedKey = getEventListNavigationKey(selectedEvent);
+    const currentIndex = calendarNavigationEvents.findIndex(
+      (event) => getCalendarNavigationKey(event) === selectedKey
+    );
+    if (currentIndex < 0) return false;
+
+    const nextIndex = direction === 'next' ? currentIndex + 1 : currentIndex - 1;
+    const nextEvent = calendarNavigationEvents[nextIndex];
+    if (!nextEvent) return false;
+
+    const nextDate = new Date(nextEvent.startDate);
+    if (!Number.isNaN(nextDate.getTime())) {
+      const nextSelectedDate = new Date(nextDate.getFullYear(), nextDate.getMonth(), nextDate.getDate());
+      setSelectedDate(nextSelectedDate);
+      if (nextDate.getFullYear() !== currentYear || nextDate.getMonth() !== currentMonth) {
+        setDisplayedMonth(nextDate.getFullYear(), nextDate.getMonth());
+      }
+    }
+
+    setSelectedEvent(calendarEventToEventListItem(nextEvent));
+    return true;
   }
 
   function handlePreviousMonth() {
@@ -358,18 +432,80 @@ export default function CalendarScreen() {
     return event.eventId != null && savedEventIds.has(String(event.eventId));
   }
 
+  function handleFilterSelect(filter: string) {
+    if (filter === ALL_EVENT_FILTER) {
+      clearFilters();
+      return;
+    }
+
+    setActiveFilters((current) =>
+      current.includes(filter)
+        ? current.filter((activeFilter) => activeFilter !== filter)
+        : [...current, filter]
+    );
+  }
+
+  function clearFilters() {
+    setActiveFilters([]);
+    setFiltersOpen(false);
+  }
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <CalendarBackdrop />
 
-      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollViewContent}>
-        <View style={styles.filterButtonsContainer}>
-          {filterOptions.map((category) => {
-            const active = category === activeFilter;
-            return (
-              <Pressable
-                key={category}
-                onPress={() => setActiveFilter(category)}
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={[styles.scrollViewContent, isMobile && styles.scrollViewContentMobile]}>
+        <View style={[styles.pageHeader, isMobile && styles.pageHeaderMobile]}>
+          <View style={styles.pageHeaderCopy}>
+            <ThemedText type="smallBold" style={styles.pageEyebrow}>SKY SCHEDULE</ThemedText>
+            <ThemedText type="title" style={[styles.pageTitle, isMobile && styles.pageTitleMobile]}>
+              Calendar
+            </ThemedText>
+          </View>
+          {!isLoading && !error && filterOptions.length > 0 ? (
+            <Pressable
+              onPress={() => setFiltersOpen((open) => !open)}
+              accessibilityLabel={filtersOpen ? 'Hide calendar filters' : 'Show calendar filters'}
+              style={({ pressed }) => [
+                styles.filterToggle,
+                (filtersOpen || hasActiveFilter) && styles.filterToggleActive,
+                pressed && styles.pressed,
+              ]}>
+              <SymbolView
+                name={{
+                  ios: 'line.3.horizontal.decrease.circle',
+                  android: 'filter_list',
+                  web: 'filter_list',
+                }}
+                size={18}
+                tintColor={filtersOpen || hasActiveFilter ? Palette.accent : Palette.textSecondary}
+              />
+              <ThemedText
+                type="small"
+                style={[styles.filterToggleText, (filtersOpen || hasActiveFilter) && styles.filterToggleTextActive]}>
+                {filterToggleLabel}
+              </ThemedText>
+            </Pressable>
+          ) : null}
+        </View>
+
+        {!isLoading && !error && filterOptions.length > 0 && filtersOpen ? (
+          <View style={styles.filterPanel}>
+            <ThemedText type="smallBold" style={styles.filterPanelTitle}>Filter by event type</ThemedText>
+            <ScrollView
+              style={styles.filterScroll}
+              contentContainerStyle={styles.filterButtonsContainer}
+              nestedScrollEnabled
+              showsVerticalScrollIndicator={false}>
+              {filterOptions.map((category) => {
+                const active =
+                  category === ALL_EVENT_FILTER ? activeFilters.length === 0 : activeFilters.includes(category);
+                return (
+                  <Pressable
+                    key={category}
+                    onPress={() => handleFilterSelect(category)}
                   style={({ pressed }) => [
                     styles.categoryPill, 
                     active && styles.categoryPillActive, 
@@ -384,32 +520,55 @@ export default function CalendarScreen() {
                           name: category,
                         })} ${category}`}
                 </ThemedText>
-              </Pressable>
-            );
-          })}
-        </View>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+          </View>
+        ) : null}
+
+        {!isLoading && !error && hasActiveFilter ? (
+          <View style={styles.appliedFilterBar}>
+            <ThemedText type="small" style={styles.appliedFilterText} numberOfLines={1}>
+              Showing {activeFilterSummary}
+            </ThemedText>
+            <Pressable onPress={clearFilters} style={styles.clearFilterButton} accessibilityLabel="Clear calendar filters">
+              <ThemedText type="small" style={styles.clearFilterText}>Clear</ThemedText>
+            </Pressable>
+          </View>
+        ) : null}
         <ThemedText type="small" themeColor="textSecondary" style={styles.locationNotice}>
           {locationNotice}
         </ThemedText>
 
-        <ThemedView style={styles.calendarContainer}>
+        <ThemedView style={[styles.calendarContainer, isMobile && styles.calendarContainerMobile]}>
           <View style={isVertical ? styles.layoutVertical : styles.layoutHorizontal}>
-            <ThemedView style={[styles.calendarSection, !isVertical && { flex: 0.7 }]}>
-              <View style={styles.monthHeader}>
+            <ThemedView style={[styles.calendarSection, isMobile && styles.calendarSectionMobile, !isVertical && { flex: 0.7 }]}>
+              <View style={[styles.monthHeader, isMobile && styles.monthHeaderMobile]}>
                 <Pressable
                   onPress={handlePreviousMonth}
-                  style={({ pressed }) => [pressed && styles.pressed, styles.headerButton]}>
-                  <ThemedText type="small">&lt; Prev</ThemedText>
+                  accessibilityLabel="Previous month"
+                  style={({ pressed }) => [styles.headerButton, isMobile && styles.headerIconButton, pressed && styles.pressed]}>
+                  <SymbolView
+                    name={{ ios: 'chevron.left', android: 'chevron_left', web: 'chevron_left' }}
+                    size={isMobile ? 22 : 16}
+                    tintColor={Palette.textPrimary}
+                  />
                 </Pressable>
                 <View style={styles.monthHeaderContent} pointerEvents="none">
-                  <ThemedText type="title" style={styles.monthTitle}>
+                  <ThemedText type="title" style={[styles.monthTitle, isMobile && styles.monthTitleMobile]}>
                     {monthName}
                   </ThemedText>
                 </View>
                 <Pressable
                   onPress={handleNextMonth}
-                  style={({ pressed }) => [pressed && styles.pressed, styles.headerButton]}>
-                  <ThemedText type="small">Next &gt;</ThemedText>
+                  accessibilityLabel="Next month"
+                  style={({ pressed }) => [styles.headerButton, isMobile && styles.headerIconButton, pressed && styles.pressed]}>
+                  <SymbolView
+                    name={{ ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' }}
+                    size={isMobile ? 22 : 16}
+                    tintColor={Palette.textPrimary}
+                  />
                 </Pressable>
               </View>
 
@@ -419,10 +578,11 @@ export default function CalendarScreen() {
                 events={currentMonthEvents}
                 selectedDate={selectedDate}
                 onSelectDate={setSelectedDate}
+                compact={isMobile}
               />
             </ThemedView>
 
-            <ThemedView style={[styles.selectedDayPanel, !isVertical && styles.selectedDayPanelDesktop, !isVertical && { flex: 0.3 }]}>
+            <ThemedView style={[styles.selectedDayPanel, isMobile && styles.selectedDayPanelMobile, !isVertical && styles.selectedDayPanelDesktop, !isVertical && { flex: 0.3 }]}>
               <View style={[styles.selectedDayHeader, { zIndex: 99 }]}>
                 <ThemedText type="smallBold" style={styles.selectedDateText}>
                   {selectedDate.toLocaleDateString('en-US', {
@@ -440,7 +600,7 @@ export default function CalendarScreen() {
                   </ThemedText>
 
                   <ScrollView
-                    style={styles.eventListScroll}
+                    style={[styles.eventListScroll, isMobile && styles.eventListScrollMobile]}
                     showsVerticalScrollIndicator
                     contentContainerStyle={styles.eventList}>
                     {selectedDayEvents.map((event) => (
@@ -449,10 +609,11 @@ export default function CalendarScreen() {
                         onPress={() => setSelectedEvent(calendarEventToEventListItem(event))}
                         style={({ pressed }) => [
                           styles.eventCard,
+                          isMobile && styles.eventCardMobile,
                           isSavedCalendarEvent(event) && styles.eventCardSaved,
                           pressed && styles.pressed,
                         ]}>
-                        <View style={styles.eventCardIconBox}>
+                        <View style={[styles.eventCardIconBox, isMobile && styles.eventCardIconBoxMobile]}>
                           {event.imageUrl ? (
                             <Image source={{ uri: event.imageUrl }} style={styles.eventCardImage} resizeMode="cover" />
                           ) : (
@@ -460,7 +621,7 @@ export default function CalendarScreen() {
                           )}
                         </View>
                         <View style={styles.eventContent}>
-                          <ThemedText type="smallBold" style={styles.eventTitle}>
+                          <ThemedText type="smallBold" style={styles.eventTitle} numberOfLines={2}>
                             {event.title}
                           </ThemedText>
                           {event.time ? (
@@ -468,7 +629,7 @@ export default function CalendarScreen() {
                               {event.time}
                             </ThemedText>
                           ) : null}
-                          <ThemedText type="small" style={styles.eventDetail}>
+                          <ThemedText type="small" style={styles.eventDetail} numberOfLines={isMobile ? 3 : 4}>
                             {event.detail}
                           </ThemedText>
                         </View>
@@ -507,6 +668,7 @@ export default function CalendarScreen() {
         <EventModal
           event={selectedEvent}
           onClose={() => setSelectedEvent(null)}
+          onNavigateEvent={handleNavigateSelectedEvent}
           onSavedStateChange={handleSavedStateChange}
           userId={userId}
           userLat={browserCoords?.latitude ?? null}
@@ -531,16 +693,133 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollViewContent: {
+    padding: Spacing.lg,
+    gap: Spacing.sm,
+    paddingTop: 36,
+    width: '100%',
+    maxWidth: 1840,
+    alignSelf: 'center',
+  },
+  scrollViewContentMobile: {
+    paddingHorizontal: 12,
+    paddingTop: 16,
+    paddingBottom: 96,
+    gap: Spacing.sm,
+  },
+  pageHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: Spacing.md,
+    paddingHorizontal: Spacing.sm,
+  },
+  pageHeaderMobile: {
+    paddingHorizontal: 0,
+  },
+  pageHeaderCopy: {
+    flex: 1,
+    minWidth: dvw(0),
+  },
+  pageEyebrow: {
+    color: Palette.accentMuted,
+    fontSize: 11,
+    lineHeight: 14,
+    fontWeight: '900',
+    letterSpacing: 1,
+  },
+  pageTitle: {
+    color: Palette.textPrimary,
+    fontSize: 30,
+    lineHeight: 36,
+    fontWeight: '900',
+  },
+  pageTitleMobile: {
+    fontSize: 26,
+    lineHeight: 31,
+  },
+  filterToggle: {
+    minHeight: 40,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 13,
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    borderColor: Palette.borderSoft,
+    backgroundColor: Palette.surface,
+  },
+  filterToggleActive: {
+    borderColor: Palette.accent,
+    backgroundColor: Palette.accent + '12',
+  },
+  filterToggleText: {
+    color: Palette.textSecondary,
+    fontSize: 12,
+    lineHeight: 15,
+    fontWeight: '800',
+  },
+  filterToggleTextActive: {
+    color: Palette.accent,
+  },
+  filterPanel: {
     padding: Spacing.md,
-    gap: Spacing.xs,
-    paddingTop: 60,
+    maxHeight: 260,
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    borderColor: Palette.borderSoft,
+    backgroundColor: Palette.bgDeep,
+    gap: Spacing.sm,
+  },
+  filterPanelTitle: {
+    color: Palette.textTertiary,
+    fontSize: 11,
+    lineHeight: 14,
+    fontWeight: '900',
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+  },
+  filterScroll: {
+    flexGrow: 0,
   },
   filterButtonsContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: Spacing.sm,
-    paddingHorizontal: Spacing.sm,
-    marginTop: Spacing.md,
+  },
+  appliedFilterBar: {
+    minHeight: 42,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: Spacing.sm,
+    paddingVertical: 7,
+    paddingHorizontal: 12,
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    borderColor: Palette.accent + '40',
+    backgroundColor: Palette.accent + '12',
+  },
+  appliedFilterText: {
+    flex: 1,
+    minWidth: dvw(0),
+    color: Palette.textSecondary,
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '700',
+  },
+  clearFilterButton: {
+    minHeight: 28,
+    justifyContent: 'center',
+    paddingHorizontal: 10,
+    borderRadius: Radius.sm,
+    borderWidth: 1,
+    borderColor: Palette.accent,
+  },
+  clearFilterText: {
+    color: Palette.accent,
+    fontSize: 11,
+    lineHeight: 13,
+    fontWeight: '900',
   },
   categoryPill: {
     paddingVertical: 7,
@@ -571,6 +850,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Palette.borderSoft,
   },
+  calendarContainerMobile: {
+    padding: 10,
+    borderRadius: Radius.md,
+    marginTop: 0,
+  },
   layoutHorizontal: {
     flexDirection: 'row',
     gap: Spacing.lg,
@@ -585,33 +869,38 @@ const styles = StyleSheet.create({
     position: 'relative',
     zIndex: 1,
   },
+  calendarSectionMobile: {
+    gap: Spacing.sm,
+  },
   monthHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: Spacing.xs,
-    paddingBottom: Spacing.xs,
-    borderBottomWidth: 2,
-    borderBottomColor: Palette.borderSoft,
     backgroundColor: Palette.bgDeep,
     borderRadius: Radius.md,
     padding: Spacing.sm,
+    gap: Spacing.sm,
+  },
+  monthHeaderMobile: {
+    paddingHorizontal: 4,
+    paddingVertical: 2,
   },
   monthHeaderContent: {
     flex: 1,
     justifyContent: 'center',
-    position: 'absolute',
-    left: Spacing.sm,
-    right: Spacing.sm,
     alignItems: 'center',
   },
   monthTitle: {
-    fontWeight: '400',
+    fontWeight: '800',
     color: Palette.textPrimary,
-    letterSpacing: 1,
-    marginBottom: Spacing.sm,
-    fontSize: 30,
-    paddingBottom: Spacing.xs,
+    letterSpacing: 0,
+    fontSize: 28,
+    lineHeight: 34,
+    textAlign: 'center',
+  },
+  monthTitleMobile: {
+    fontSize: 19,
+    lineHeight: 24,
   },
   selectedDayPanel: {
     backgroundColor: Palette.bgDeep,
@@ -622,6 +911,10 @@ const styles = StyleSheet.create({
     padding: Spacing.md,
     position: 'relative',
     zIndex: 3,
+  },
+  selectedDayPanelMobile: {
+    padding: 12,
+    gap: Spacing.sm,
   },
   selectedDayPanelDesktop: {
     maxHeight: dvh(CALENDAR_GRID_MAX_HEIGHT),
@@ -636,10 +929,9 @@ const styles = StyleSheet.create({
     paddingTop: Spacing.xs,
   },
   selectedDateText: {
-    fontWeight: '400',
+    fontWeight: '800',
     color: Palette.textPrimary,
-    letterSpacing: 2,
-    marginTop: Spacing.md,
+    letterSpacing: 0,
     zIndex: 1,
   },
   eventCount: {
@@ -649,6 +941,9 @@ const styles = StyleSheet.create({
   eventListScroll: {
     flex: 1,
     minHeight: dvh(0),
+  },
+  eventListScrollMobile: {
+    maxHeight: 420,
   },
   eventList: {
     gap: Spacing.sm,
@@ -662,6 +957,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: Spacing.md,
   },
+  eventCardMobile: {
+    padding: 10,
+    gap: 10,
+    borderRadius: Radius.sm,
+  },
   eventCardSaved: {
     borderWidth: 2,
     borderColor: Palette.accentBlue,
@@ -674,6 +974,11 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  eventCardIconBoxMobile: {
+    width: 46,
+    height: 46,
+    borderRadius: Radius.sm,
   },
   eventCardImage: {
     width: '100%',
@@ -721,6 +1026,19 @@ const styles = StyleSheet.create({
     opacity: 0.7,
   },
   headerButton: {
+    width: 42,
+    minHeight: 38,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    borderColor: Palette.borderSoft,
+    backgroundColor: Palette.surface,
     cursor: 'pointer',
+  },
+  headerIconButton: {
+    width: 38,
+    minHeight: 38,
+    borderRadius: Radius.sm,
   },
 });
