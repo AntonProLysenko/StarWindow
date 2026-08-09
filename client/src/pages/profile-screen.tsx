@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
 import {
-  ActivityIndicator,
   Pressable,
   SafeAreaView,
   ScrollView,
@@ -15,6 +14,7 @@ import {
 
 import { EventCard } from '@/components/events/event-card';
 import { EventModal } from '@/components/events/event-modal';
+import { OrbitalLoader } from '@/components/orbital-loader';
 import { Breakpoints, Palette, Radius } from '@/constants/tokens';
 import { fetchSavedUserEvents, type SavedUserEvent } from '@/lib/events-api';
 import * as eventTypesAPI from '@/utilities/event-types-api';
@@ -459,8 +459,7 @@ function EditProfile({
         <Text style={styles.panelEyebrow}>ACCOUNT DETAILS</Text>
         {isLoading ? (
           <View style={styles.loadingRow}>
-            <ActivityIndicator color={Palette.accent} />
-            <Text style={styles.loadingText}>Loading profile...</Text>
+            <OrbitalLoader label="Loading profile..." size={82} compact />
           </View>
         ) : (
           <>
@@ -518,8 +517,7 @@ function EditProfile({
         <Text style={styles.panelCopy}>Choose which sky events should shape your calendar and feed.</Text>
         {isLoading ? (
           <View style={styles.loadingRow}>
-            <ActivityIndicator color={Palette.accent} />
-            <Text style={styles.loadingText}>Loading preferences...</Text>
+            <OrbitalLoader label="Loading preferences..." size={82} compact />
           </View>
         ) : (
           <>
@@ -582,8 +580,7 @@ function MySavedEvents({
           <Text style={styles.errorText}>Log in to see your saved events.</Text>
         ) : isLoading ? (
           <View style={styles.loadingRow}>
-            <ActivityIndicator color={Palette.accent} />
-            <Text style={styles.loadingText}>Loading saved events...</Text>
+            <OrbitalLoader label="Loading saved events..." size={86} compact />
           </View>
         ) : error ? (
           <Text style={styles.errorText}>{error}</Text>
@@ -842,10 +839,10 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   loadingRow: {
-    flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    minHeight: dvh(120),
+    justifyContent: 'center',
+    minHeight: dvh(132),
+    paddingVertical: 18,
   },
   loadingText: {
     color: Palette.textSecondary,

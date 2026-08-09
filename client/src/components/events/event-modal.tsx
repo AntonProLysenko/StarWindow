@@ -7,7 +7,6 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import * as ImagePicker from 'expo-image-picker';
 import { SymbolView } from 'expo-symbols';
 import {
-  ActivityIndicator,
   Animated,
   Easing,
   Image,
@@ -28,6 +27,7 @@ import { LaunchDetailsSection } from '@/components/events/launch-details';
 import { ScoreGauge } from '@/components/events/score-gauge';
 import { fallbackIconSource } from '@/components/events/event-fallback-icon';
 import { formatEventDate } from '@/components/events/event-card';
+import { OrbitalLoader } from '@/components/orbital-loader';
 import { Breakpoints, Palette, Radius, alpha } from '@/constants/tokens';
 import {
   addSavedUserEventImage,
@@ -827,7 +827,7 @@ export function EventModal({
                 <Text style={[styles.note, isMobile && styles.noteMobile]}>Enable location to see your viewing score.</Text>
               ) : scoreLoading ? (
                 <View style={styles.scoreLoading}>
-                  <ActivityIndicator color={Palette.accent} />
+                  <OrbitalLoader label="Checking current sky..." size={72} compact />
                 </View>
               ) : score != null ? (
                 <View style={[styles.gaugeWrap, isMobile && styles.gaugeWrapMobile]}>
@@ -1026,7 +1026,7 @@ export function EventModal({
                               ]}
                               aria-label="Delete photo">
                               {imageBusy ? (
-                                <ActivityIndicator color={Palette.textPrimary} size="small" />
+                                <OrbitalLoader size={22} compact />
                               ) : (
                                 <SymbolView
                                   name={{
@@ -1465,8 +1465,7 @@ function MeteorVisibilityPanel({
         <Text style={styles.meteorSkyScoreText}>Location needed for max radiant altitude and current sky score.</Text>
       ) : scoreLoading ? (
         <View style={styles.meteorSkyScoreRow}>
-          <ActivityIndicator color={Palette.accent} />
-          <Text style={styles.meteorSkyScoreText}>Loading current sky data...</Text>
+          <OrbitalLoader label="Loading current sky data..." size={64} compact />
         </View>
       ) : null}
     </View>
@@ -2015,9 +2014,9 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
   meteorSkyScoreRow: {
-    flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    justifyContent: 'center',
+    paddingVertical: 4,
   },
   meteorSkyScoreText: {
     color: Palette.textTertiary,

@@ -1,11 +1,8 @@
-// Pure SVG rendering for the viewing-score gauge (semicircle, 0–100, color-tiered).
+// Pure SVG rendering for the viewing-score gauge (semicircle, 0-100, color-tiered).
 //
-// Extracted from viewing-score-gauge.web.tsx so it can be reused OFF the map
-// (e.g. in the event detail modal) WITHOUT importing leaflet/react-leaflet. This
-// module has zero dependencies — just string math — so it's safe on any platform.
+// Extracted from viewing-score-gauge.web.tsx so it can be reused off the map
+// without importing leaflet/react-leaflet.
 
-// --- Color tiers ------------------------------------------------------------
-// 0–40 poor (red) · 41–70 moderate (amber) · 71–100 great (green).
 import { Palette } from '@/constants/tokens';
 
 const POOR = Palette.accentRed;
@@ -18,50 +15,63 @@ export function scoreColor(score: number): string {
   return GREAT;
 }
 
-// --- Arc geometry -----------------------------------------------------------
-// Semicircle bulging upward: 180° = left, 90° = top, 0° = right.
-// Screen space is y-down, so y = cy − r·sin(θ).
-const CX = 25;
-const CY = 26;
-const R = 21;
-const STROKE = 6;
-const SVG_W = 50;
-const SVG_H = 30;
+const DEFAULT_GEOMETRY = {
+  cx: 25,
+  cy: 26,
+  r: 21,
+  stroke: 6,
+  width: 50,
+  height: 30,
+  textY: 24,
+  textSize: 13,
+};
 
-function polar(angleDeg: number): [number, number] {
+const WIDE_GEOMETRY = {
+  cx: 50,
+  cy: 37,
+  r: 34,
+  stroke: 6,
+  width: 100,
+  height: 42,
+  textY: 34,
+  textSize: 15,
+};
+
+type GaugeGeometry = typeof DEFAULT_GEOMETRY;
+
+function polar(angleDeg: number, geometry: GaugeGeometry): [number, number] {
   const a = (angleDeg * Math.PI) / 180;
-  return [CX + R * Math.cos(a), CY - R * Math.sin(a)];
+  return [
+    geometry.cx + geometry.r * Math.cos(a),
+    geometry.cy - geometry.r * Math.sin(a),
+  ];
 }
 
-/** SVG arc `d` from `startAngle` to `endAngle` along the top of the circle. */
-function arcPath(startAngle: number, endAngle: number): string {
-  const [x1, y1] = polar(startAngle);
-  const [x2, y2] = polar(endAngle);
+function arcPath(startAngle: number, endAngle: number, geometry: GaugeGeometry): string {
+  const [x1, y1] = polar(startAngle, geometry);
+  const [x2, y2] = polar(endAngle, geometry);
   const largeArc = Math.abs(startAngle - endAngle) > 180 ? 1 : 0;
-  return `M ${x1.toFixed(2)} ${y1.toFixed(2)} A ${R} ${R} 0 ${largeArc} 1 ${x2.toFixed(2)} ${y2.toFixed(2)}`;
+  return `M ${x1.toFixed(2)} ${y1.toFixed(2)} A ${geometry.r} ${geometry.r} 0 ${largeArc} 1 ${x2.toFixed(2)} ${y2.toFixed(2)}`;
 }
 
-/**
- * Pure SVG markup for the gauge at a given score. Progress fills the arc
- * proportionally (100 → full semicircle, 50 → half).
- * @param score 0–100
- * @param includeText whether to draw the number inside the arc (default true).
- *   The map gauge keeps it; the modal renders the number as real text instead
- *   and passes false, so the score is never lost if the SVG image fails to load.
- */
-export function gaugeSvgMarkup(score: number, includeText = true): string {
+export function gaugeSvgMarkup(
+  score: number,
+  includeText = true,
+  variant: 'compact' | 'wide' = 'compact'
+): string {
   const s = Math.max(0, Math.min(100, Math.round(score)));
   const color = scoreColor(s);
-  const endAngle = 180 - 1.8 * s; // 0→180 (empty) … 100→0 (full)
-  const track = arcPath(180, 0);
-  const progress = s > 0 ? arcPath(180, endAngle) : '';
+  const geometry = variant === 'wide' ? WIDE_GEOMETRY : DEFAULT_GEOMETRY;
+  const endAngle = 180 - 1.8 * s;
+  const track = arcPath(180, 0, geometry);
+  const progress = s > 0 ? arcPath(180, endAngle, geometry) : '';
   const text = includeText
-    ? `<text x="${CX}" y="24" text-anchor="middle" font-family="sans-serif" font-size="13" font-weight="700" fill="${color}">${s}</text>`
+    ? `<text x="${geometry.cx}" y="${geometry.textY}" text-anchor="middle" font-family="sans-serif" font-size="${geometry.textSize}" font-weight="700" fill="${color}">${s}</text>`
     : '';
 
-  return `<svg width="${SVG_W}" height="${SVG_H}" viewBox="0 0 ${SVG_W} ${SVG_H}" xmlns="http://www.w3.org/2000/svg">
-    <path d="${track}" fill="none" stroke="rgba(255,255,255,0.16)" stroke-width="${STROKE}" stroke-linecap="round" />
-    ${progress ? `<path d="${progress}" fill="none" stroke="${color}" stroke-width="${STROKE}" stroke-linecap="round" />` : ''}
+  return `<svg width="${geometry.width}" height="${geometry.height}" viewBox="0 0 ${geometry.width} ${geometry.height}" xmlns="http://www.w3.org/2000/svg">
+    <path d="${track}" fill="none" stroke="rgba(255,255,255,0.16)" stroke-width="${geometry.stroke}" stroke-linecap="round" />
+    ${progress ? `<path d="${progress}" fill="none" stroke="${color}" stroke-width="${geometry.stroke}" stroke-linecap="round" />` : ''}
     ${text}
   </svg>`;
 }

@@ -5,6 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { MonthGrid } from '@/components/calendar/month-grid';
 import { EventModal } from '@/components/events/event-modal';
+import { OrbitalLoader } from '@/components/orbital-loader';
 import { ShootingStar } from '@/components/shooting-star';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -647,9 +648,7 @@ export default function CalendarScreen() {
                 </>
               ) : isLoading ? (
                 <View style={styles.noEventsContainer}>
-                  <ThemedText type="small" themeColor="textSecondary" style={styles.noEventsText}>
-                    Loading calendar events...
-                  </ThemedText>
+                  <OrbitalLoader label="Loading calendar events..." size={88} />
                 </View>
               ) : error ? (
                 <View style={styles.noEventsContainer}>

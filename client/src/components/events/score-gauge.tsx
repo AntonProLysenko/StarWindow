@@ -18,7 +18,7 @@ function svgToDataUri(svg: string): string {
 
 export function ScoreGauge({ score, label = 'VIEWING SCORE' }: { score: number; label?: string }) {
   const s = Math.max(0, Math.min(100, Math.round(score)));
-  const uri = svgToDataUri(gaugeSvgMarkup(s, false)); // arc only; number rendered below
+  const uri = svgToDataUri(gaugeSvgMarkup(s, false, 'wide')); // arc only; number rendered below
   const color = scoreColor(s);
 
   return (
@@ -44,21 +44,24 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   arcBox: {
-    width: dvw(150),
-    height: dvh(90),
+    width: dvw(188),
+    height: dvh(92),
     alignItems: 'center',
     justifyContent: 'flex-end',
   },
   gauge: {
     position: 'absolute',
-    top: 0,
-    width: dvw(150),
-    height: dvh(90),
+    top: 2,
+    width: dvw(188),
+    height: dvh(78),
   },
   number: {
-    fontSize: 30,
+    minWidth: 76,
+    textAlign: 'center',
+    fontSize: 32,
+    lineHeight: 38,
     fontWeight: '800',
-    marginBottom: 4,
+    marginBottom: 2,
   },
   label: {
     fontSize: 10,

@@ -8,7 +8,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { SymbolView } from 'expo-symbols';
 import {
-  ActivityIndicator,
+  type LayoutChangeEvent,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -20,10 +20,11 @@ import { useLocalSearchParams } from 'expo-router';
 
 import { EventCard } from '@/components/events/event-card';
 import { EventModal } from '@/components/events/event-modal';
+import { OrbitalLoader } from '@/components/orbital-loader';
 import { Breakpoints, Palette, Radius, Spacing } from '@/constants/tokens';
 import { useSharedEvents } from '@/context/events-context';
 import { getEventEmoji } from '@/lib/event-colors';
-import { fetchSavedUserEvents, type EventListItem } from '@/lib/events-api';
+import { fetchSavedUserEvents, type EventListItem, type VisibleBodyEventItem } from '@/lib/events-api';
 import { ALL_EVENT_FILTER, EVENT_FILTER_OPTIONS, filterEvents } from '@/lib/event-icons';
 import { getOrRequestUserLocation } from '@/utilities/user-location-service';
 import { getUser } from '@/utilities/users-service';
@@ -32,6 +33,8 @@ const PAST_DAYS_TO_SHOW = 365;
 const FUTURE_DAYS_TO_SHOW = 365;
 const ALL = ALL_EVENT_FILTER;
 const FILTER_OPTIONS = EVENT_FILTER_OPTIONS;
+const EMPTY_EVENTS: EventListItem[] = [];
+const EVENT_LIST_SETTLE_MS = 650;
 const PRIMARY_FILTERS: Set<string> = new Set(FILTER_OPTIONS);
 const CELESTIAL_TYPE_KEYWORDS = [
   'eclipse',
@@ -61,6 +64,7 @@ type EventRouteParams = {
   videoUrls?: string | string[];
   externalUrl?: string | string[];
   externalUrls?: string | string[];
+  visibleBodies?: string | string[];
   synthetic?: string | string[];
 };
 
@@ -95,6 +99,33 @@ function urlArrayParam(value?: string | string[], fallback?: string | null) {
   add(fallback);
 
   return urls;
+}
+
+function visibleBodiesParam(value?: string | string[]): VisibleBodyEventItem[] | undefined {
+  const raw = firstParam(value);
+  if (!raw) return undefined;
+
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return undefined;
+
+    return parsed
+      .filter((body): body is VisibleBodyEventItem =>
+        Boolean(body) && typeof body === 'object' && typeof body.body === 'string' && body.body.trim().length > 0
+      )
+      .map((body) => ({
+        body: body.body,
+        altitude_degrees: body.altitude_degrees ?? null,
+        azimuth_degrees: body.azimuth_degrees ?? null,
+        distance_from_earth_km: body.distance_from_earth_km ?? null,
+        constellation: body.constellation ?? null,
+        magnitude: body.magnitude ?? null,
+        image_url: body.image_url ?? null,
+        image_source: body.image_source ?? null,
+      }));
+  } catch {
+    return undefined;
+  }
 }
 
 function normalizeParam(value?: string | null) {
@@ -281,6 +312,7 @@ function buildDashboardPreviewEvent(params: EventRouteParams): EventListItem | n
   const externalUrl = firstParam(params.externalUrl) ?? null;
   const videoUrls = urlArrayParam(params.videoUrls, videoUrl);
   const externalUrls = urlArrayParam(params.externalUrls, externalUrl);
+  const visibleBodies = visibleBodiesParam(params.visibleBodies);
 
   return {
     id: `dashboard-${normalizeParam(type)}-${normalizeParam(name)}`,
@@ -301,6 +333,7 @@ function buildDashboardPreviewEvent(params: EventRouteParams): EventListItem | n
     external_url: externalUrls[0] ?? null,
     external_urls: externalUrls,
     launch_details: null,
+    visible_bodies: visibleBodies,
   };
 }
 
@@ -310,6 +343,13 @@ export default function EventsScreen() {
   const routeParams = useLocalSearchParams<EventRouteParams>();
   const routeEventKey = getEventRouteKey(routeParams);
   const { events, isLoading: loading, error } = useSharedEvents();
+  const hasLoadedEvents = !loading && !error;
+  const eventsVersionKey = useMemo(() => (
+    events
+      .map((event) => `${event.category}:${event.id}:${event.event_id}:${event.date ?? ''}`)
+      .join('|')
+  ), [events]);
+  const [eventsSettled, setEventsSettled] = useState(false);
   const [activeTypes, setActiveTypes] = useState<string[]>([]);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const listRef = useRef<ScrollView>(null);
@@ -325,6 +365,10 @@ export default function EventsScreen() {
   const [userLon, setUserLon] = useState<number | null>(null);
   const [savedEventIds, setSavedEventIds] = useState<Set<string>>(() => new Set());
   const userId = getUser()?.user_id ?? null;
+  const [savedEventsLoading, setSavedEventsLoading] = useState(userId != null);
+  const pageLoading = loading || !eventsSettled || savedEventsLoading;
+  const eventsReady = !pageLoading && hasLoadedEvents && events.length > 0;
+  const pageEvents = eventsReady ? events : EMPTY_EVENTS;
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -359,9 +403,25 @@ export default function EventsScreen() {
   }, []);
 
   useEffect(() => {
+    if (loading) {
+      setEventsSettled(false);
+      return;
+    }
+
+    const timeoutId = setTimeout(() => {
+      setEventsSettled(true);
+    }, error ? 0 : EVENT_LIST_SETTLE_MS);
+
+    return () => {
+      clearTimeout(timeoutId);
+    };
+  }, [error, eventsVersionKey, loading]);
+
+  useEffect(() => {
     let isActive = true;
 
     if (userId == null) {
+      setSavedEventsLoading(false);
       setSavedEventIds(new Set());
       return () => {
         isActive = false;
@@ -369,12 +429,17 @@ export default function EventsScreen() {
     }
 
     const controller = new AbortController();
+    setSavedEventsLoading(true);
     fetchSavedUserEvents(controller.signal)
       .then((savedEvents) => {
         if (!isActive || controller.signal.aborted) return;
         setSavedEventIds(new Set(savedEvents.map((event) => String(event.event_id))));
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => {
+        if (!isActive || controller.signal.aborted) return;
+        setSavedEventsLoading(false);
+      });
 
     return () => {
       isActive = false;
@@ -389,7 +454,7 @@ export default function EventsScreen() {
     const extraTypes: string[] = [];
     const seen = new Set(PRIMARY_FILTERS);
 
-    for (const event of events) {
+    for (const event of pageEvents) {
       const option = getCanonicalFilterOption(event.type);
       if (!event.type || seen.has(option)) continue;
       if (isPrimaryFilterType(event)) continue;
@@ -398,7 +463,7 @@ export default function EventsScreen() {
     }
 
     return [...FILTER_OPTIONS, ...extraTypes];
-  }, [events]);
+  }, [pageEvents]);
 
   useEffect(() => {
     setActiveTypes((current) => {
@@ -412,9 +477,9 @@ export default function EventsScreen() {
   }, [filterOptions]);
 
   const visibleEvents = useMemo(() => {
-    if (activeTypes.length === 0) return events;
-    return events.filter((event) => activeTypes.some((filter) => eventMatchesFilter(event, filter)));
-  }, [events, activeTypes]);
+    if (activeTypes.length === 0) return pageEvents;
+    return pageEvents.filter((event) => activeTypes.some((filter) => eventMatchesFilter(event, filter)));
+  }, [pageEvents, activeTypes]);
   const hasActiveFilter = activeTypes.length > 0;
   const activeFilterSummary = activeTypes.map(getFilterLabel).join(', ');
   const filterToggleLabel = hasActiveFilter ? `Filters (${activeTypes.length})` : 'Filters';
@@ -447,10 +512,10 @@ export default function EventsScreen() {
   useEffect(() => {
     setDidAlignToUpcoming(false);
     setUpcomingAnchorY(null);
-  }, [activeTypes]);
+  }, [activeTypes, eventsVersionKey]);
 
   const alignToUpcoming = useCallback(() => {
-    if (didAlignToUpcoming || upcomingAnchorY == null || loading) return;
+    if (didAlignToUpcoming || upcomingAnchorY == null || !eventsReady) return;
 
     if (alignFrameRef.current != null) {
       cancelAnimationFrame(alignFrameRef.current);
@@ -462,14 +527,21 @@ export default function EventsScreen() {
       listRef.current?.scrollTo({ y: Math.max(upcomingAnchorY - 4, 0), animated: false });
       setDidAlignToUpcoming(true);
     });
-  }, [didAlignToUpcoming, loading, upcomingAnchorY]);
+  }, [didAlignToUpcoming, eventsReady, upcomingAnchorY]);
 
   useEffect(() => {
     alignToUpcoming();
   }, [alignToUpcoming]);
 
+  const handleUpcomingLayout = useCallback((event: LayoutChangeEvent) => {
+    const nextY = event.nativeEvent.layout.y;
+    setUpcomingAnchorY((current) => (
+      current != null && Math.abs(current - nextY) < 1 ? current : nextY
+    ));
+  }, []);
+
   useEffect(() => {
-    if (!routeEventKey || openedRouteEventKey === routeEventKey || loading) return;
+    if (!routeEventKey || openedRouteEventKey === routeEventKey || !eventsReady) return;
 
     const requestedType = firstParam(routeParams.type);
     const matchedEvent = findRequestedEvent(events, routeParams);
@@ -483,7 +555,7 @@ export default function EventsScreen() {
       setActiveTypes([getCanonicalFilterOption(requestedType)]);
       setOpenedRouteEventKey(routeEventKey);
     }
-  }, [events, loading, openedRouteEventKey, routeEventKey, routeParams]);
+  }, [events, eventsReady, openedRouteEventKey, routeEventKey, routeParams]);
 
   // Phase 2: open the detail modal for the clicked event.
   const handleEventClick = (event: EventListItem) => {
@@ -531,7 +603,7 @@ export default function EventsScreen() {
           <Text style={styles.eyebrow}>WHAT&apos;S COMING UP</Text>
           <Text style={styles.title}>Events</Text>
         </View>
-        {!loading && !error && events.length > 0 ? (
+        {eventsReady ? (
           <Pressable
             onPress={() => setFiltersOpen((open) => !open)}
             style={[styles.filterToggle, filtersOpen && styles.filterToggleActive]}
@@ -554,7 +626,7 @@ export default function EventsScreen() {
 
       {/* Filter bar — hidden until we have data to derive types from.
           Wraps onto additional rows rather than scrolling off-screen. */}
-      {!loading && !error && events.length > 0 && filtersOpen ? (
+      {eventsReady && filtersOpen ? (
         <View style={styles.filterPanel}>
           <Text style={styles.filterPanelTitle}>Filter by event type</Text>
           <ScrollView
@@ -585,7 +657,7 @@ export default function EventsScreen() {
         </View>
       ) : null}
 
-      {!loading && !error && hasActiveFilter ? (
+      {eventsReady && hasActiveFilter ? (
         <View style={styles.appliedFilterBar}>
           <Text style={styles.appliedFilterText} numberOfLines={1}>
             Showing {activeFilterSummary}
@@ -596,10 +668,9 @@ export default function EventsScreen() {
         </View>
       ) : null}
 
-      {loading ? (
+      {pageLoading ? (
         <View style={styles.centerState}>
-          <ActivityIndicator color={Palette.accent} />
-          <Text style={styles.stateText}>Loading events…</Text>
+          <OrbitalLoader label="Loading events..." size={104} />
         </View>
       ) : error ? (
         <View style={styles.centerState}>
@@ -641,7 +712,7 @@ export default function EventsScreen() {
 
           <View
             style={styles.timelineSection}
-            onLayout={(event) => setUpcomingAnchorY(event.nativeEvent.layout.y)}>
+            onLayout={handleUpcomingLayout}>
             {pastEvents.length > 0 && upcomingEvents.length > 0 ? (
               <TimelineSectionLabel text="UPCOMING EVENTS" />
             ) : null}
@@ -658,7 +729,7 @@ export default function EventsScreen() {
       )}
 
       {/* Detail modal — mounted only while open so its a11y lifecycle is clean. */}
-      {selectedEvent && (
+      {eventsReady && selectedEvent && (
         <EventModal
           event={selectedEvent}
           onClose={() => setSelectedEvent(null)}

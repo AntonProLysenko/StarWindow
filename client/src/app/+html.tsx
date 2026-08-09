@@ -13,6 +13,7 @@ export default function Root({ children }: PropsWithChildren) {
         <ScrollViewStyleReset />
         {headNodes}
         <title>{APP_NAME}</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
         <meta name="application-name" content={APP_NAME} />
         <meta name="apple-mobile-web-app-title" content={APP_NAME} />
         <meta name="apple-mobile-web-app-capable" content="yes" />
