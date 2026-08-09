@@ -25,10 +25,32 @@ const mimeTypes = {
   '.woff2': 'font/woff2',
 };
 
-function send(res, status, body, contentType = 'text/plain; charset=utf-8') {
+function getCacheControl(filePath, status) {
+  if (status !== 200) return 'no-store';
+
+  const extension = path.extname(filePath).toLowerCase();
+  const basename = path.basename(filePath).toLowerCase();
+
+  if (
+    extension === '.html' ||
+    basename === 'manifest.webmanifest' ||
+    basename === 'assetlinks.json' ||
+    basename === 'apple-app-site-association'
+  ) {
+    return 'no-store, no-cache, must-revalidate, proxy-revalidate';
+  }
+
+  if (filePath.includes(`${path.sep}_expo${path.sep}static${path.sep}`)) {
+    return 'public, max-age=31536000, immutable';
+  }
+
+  return 'public, max-age=3600, must-revalidate';
+}
+
+function send(res, status, body, contentType = 'text/plain; charset=utf-8', filePath = '') {
   res.writeHead(status, {
     'Content-Type': contentType,
-    'Cache-Control': status === 200 ? 'public, max-age=3600' : 'no-store',
+    'Cache-Control': getCacheControl(filePath, status),
   });
   res.end(body);
 }
@@ -74,7 +96,7 @@ const server = http.createServer((req, res) => {
         return;
       }
 
-      send(res, 200, data, contentType);
+      send(res, 200, data, contentType, filePath);
     });
   });
 });
