@@ -35,7 +35,7 @@
       "orientation": "portrait",
       "themeColor": "#020810",
       "backgroundColor": "#000008",
-      "barStyle": "black-translucent"
+      "barStyle": "black"
     },
     "plugins": [
       "expo-router",

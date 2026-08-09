@@ -63,6 +63,31 @@ body {
   }
 }
 
+@media (display-mode: standalone) and (max-width: 767px) {
+  html,
+  body,
+  #root {
+    height: 100dvh;
+    min-height: 100dvh;
+    background: #000008;
+  }
+
+  [data-testid='app-shell'] {
+    height: calc(100dvh - env(safe-area-inset-top)) !important;
+    min-height: calc(100dvh - env(safe-area-inset-top)) !important;
+    transform: translateY(env(safe-area-inset-top));
+  }
+
+  [data-testid='app-content'] {
+    height: calc(100dvh - env(safe-area-inset-top) - 88px - env(safe-area-inset-bottom)) !important;
+    max-height: calc(100dvh - env(safe-area-inset-top) - 88px - env(safe-area-inset-bottom)) !important;
+  }
+
+  [data-testid='app-sidebar'] {
+    bottom: 0 !important;
+  }
+}
+
 @media (min-width: 641px) {
   [data-testid='dashboard-main-content'] {
     max-width: 1240px !important;
