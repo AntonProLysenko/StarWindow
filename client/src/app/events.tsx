@@ -5,10 +5,13 @@
 // visually distinct (see EventCard). Clicking a card is a placeholder for now —
 // phase 2 will route to a per-event detail page.
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { SymbolView } from 'expo-symbols';
 import {
   Pressable,
+  type LayoutChangeEvent,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
   ScrollView,
   StyleSheet,
   Text,
@@ -369,6 +372,12 @@ export default function EventsScreen() {
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [upcomingLimit, setUpcomingLimit] = useState(INITIAL_UPCOMING_EVENTS);
   const [pastLimit, setPastLimit] = useState(INITIAL_PAST_EVENTS);
+  const listRef = useRef<ScrollView>(null);
+  const listScrollYRef = useRef(0);
+  const listContentHeightRef = useRef(0);
+  const pendingPastPrependRef = useRef<{ y: number; height: number } | null>(null);
+  const [upcomingAnchorY, setUpcomingAnchorY] = useState<number | null>(null);
+  const [didAlignToUpcoming, setDidAlignToUpcoming] = useState(false);
 
   // Modal + user context (location for the viewing score, user_id for saving).
   const [selectedEvent, setSelectedEvent] = useState<EventListItem | null>(null);
@@ -408,6 +417,8 @@ export default function EventsScreen() {
   useEffect(() => {
     setUpcomingLimit(INITIAL_UPCOMING_EVENTS);
     setPastLimit(INITIAL_PAST_EVENTS);
+    setUpcomingAnchorY(null);
+    setDidAlignToUpcoming(false);
   }, [activeTypes, eventsVersionKey]);
 
   // Filter options are derived from the types actually present in the data,
@@ -455,7 +466,7 @@ export default function EventsScreen() {
   }, [visibleEvents]);
 
   const displayedEvents = useMemo(
-    () => [...upcomingEvents, ...pastEvents],
+    () => [...pastEvents, ...upcomingEvents],
     [pastEvents, upcomingEvents]
   );
   const visibleUpcomingEvents = useMemo(
@@ -463,9 +474,53 @@ export default function EventsScreen() {
     [upcomingEvents, upcomingLimit]
   );
   const visiblePastEvents = useMemo(
-    () => pastEvents.slice(0, pastLimit),
+    () => pastEvents.slice(Math.max(pastEvents.length - pastLimit, 0)),
     [pastEvents, pastLimit]
   );
+
+  function alignToUpcoming() {
+    if (didAlignToUpcoming || upcomingAnchorY == null || pageLoading) return;
+    requestAnimationFrame(() => {
+      listRef.current?.scrollTo({ y: Math.max(upcomingAnchorY - 4, 0), animated: false });
+      setDidAlignToUpcoming(true);
+    });
+  }
+
+  function handleListScroll(event: NativeSyntheticEvent<NativeScrollEvent>) {
+    listScrollYRef.current = event.nativeEvent.contentOffset.y;
+  }
+
+  function handleListContentSizeChange(_width: number, height: number) {
+    const pendingPrepend = pendingPastPrependRef.current;
+    const previousHeight = listContentHeightRef.current;
+    listContentHeightRef.current = height;
+
+    if (pendingPrepend) {
+      pendingPastPrependRef.current = null;
+      const heightDelta = Math.max(height - pendingPrepend.height, 0);
+      requestAnimationFrame(() => {
+        listRef.current?.scrollTo({
+          y: pendingPrepend.y + heightDelta,
+          animated: false,
+        });
+      });
+      return;
+    }
+
+    if (previousHeight !== height) alignToUpcoming();
+  }
+
+  function handleLoadMorePastEvents() {
+    pendingPastPrependRef.current = {
+      y: listScrollYRef.current,
+      height: listContentHeightRef.current,
+    };
+    setPastLimit((current) => current + EVENTS_PAGE_SIZE);
+  }
+
+  useEffect(() => {
+    alignToUpcoming();
+  }, [upcomingAnchorY, pageLoading, didAlignToUpcoming]);
 
   function handleNavigateSelectedEvent(direction: 'next' | 'previous') {
     if (!selectedEvent || displayedEvents.length === 0) return false;
@@ -624,9 +679,28 @@ export default function EventsScreen() {
         </View>
       ) : (
         <ScrollView
+          ref={listRef}
           style={styles.list}
           contentContainerStyle={styles.listContent}
-          showsVerticalScrollIndicator={false}>
+          showsVerticalScrollIndicator={false}
+          onScroll={handleListScroll}
+          scrollEventThrottle={16}
+          onContentSizeChange={handleListContentSizeChange}>
+          {pastEvents.length > 0 ? (
+            <EventTimelineSection
+              label="PAST EVENTS"
+              events={visiblePastEvents}
+              totalCount={pastEvents.length}
+              isSavedEvent={isSavedEvent}
+              onEventPress={handleEventClick}
+              onLoadMore={handleLoadMorePastEvents}
+              loadMorePlacement="top"
+              labelPlacement="bottom"
+              loadMoreLabel="Load more past events"
+              completeLabel="No more past events"
+            />
+          ) : null}
+
           {upcomingEvents.length > 0 ? (
             <EventTimelineSection
               label={pastEvents.length > 0 ? 'UPCOMING EVENTS' : null}
@@ -635,17 +709,10 @@ export default function EventsScreen() {
               isSavedEvent={isSavedEvent}
               onEventPress={handleEventClick}
               onLoadMore={() => setUpcomingLimit((current) => current + EVENTS_PAGE_SIZE)}
-            />
-          ) : null}
-
-          {pastEvents.length > 0 ? (
-            <EventTimelineSection
-              label="PAST EVENTS"
-              events={visiblePastEvents}
-              totalCount={pastEvents.length}
-              isSavedEvent={isSavedEvent}
-              onEventPress={handleEventClick}
-              onLoadMore={() => setPastLimit((current) => current + EVENTS_PAGE_SIZE)}
+              loadMorePlacement="bottom"
+              loadMoreLabel="Load more upcoming events"
+              completeLabel="No more upcoming events"
+              onSectionLayout={(event) => setUpcomingAnchorY(event.nativeEvent.layout.y)}
             />
           ) : null}
         </ScrollView>
@@ -683,6 +750,11 @@ function EventTimelineSection({
   isSavedEvent,
   onEventPress,
   onLoadMore,
+  loadMorePlacement = 'bottom',
+  labelPlacement = 'top',
+  loadMoreLabel,
+  completeLabel,
+  onSectionLayout,
 }: {
   label: string | null;
   events: EventListItem[];
@@ -690,12 +762,30 @@ function EventTimelineSection({
   isSavedEvent: (event: EventListItem) => boolean;
   onEventPress: (event: EventListItem) => void;
   onLoadMore: () => void;
+  loadMorePlacement?: 'top' | 'bottom';
+  labelPlacement?: 'top' | 'bottom';
+  loadMoreLabel?: string;
+  completeLabel?: string;
+  onSectionLayout?: (event: LayoutChangeEvent) => void;
 }) {
   const remaining = Math.max(totalCount - events.length, 0);
+  const loadMoreControl = remaining > 0 ? (
+    <Pressable style={styles.loadMoreButton} onPress={onLoadMore}>
+      <Text style={styles.loadMoreText}>
+        {loadMoreLabel ?? `Load ${Math.min(EVENTS_PAGE_SIZE, remaining)} more`}
+      </Text>
+      <Text style={styles.loadMoreCount}>
+        {events.length} of {totalCount}
+      </Text>
+    </Pressable>
+  ) : (
+    <Text style={styles.sectionCompleteText}>{completeLabel ?? `Showing all ${totalCount}`}</Text>
+  );
 
   return (
-    <View style={styles.timelineSection}>
-      {label ? <TimelineSectionLabel text={label} /> : null}
+    <View style={styles.timelineSection} onLayout={onSectionLayout}>
+      {loadMorePlacement === 'top' ? loadMoreControl : null}
+      {label && labelPlacement === 'top' ? <TimelineSectionLabel text={label} /> : null}
       {events.map((event) => (
         <EventCard
           key={`${event.category}-${event.id}`}
@@ -704,18 +794,8 @@ function EventTimelineSection({
           onPress={onEventPress}
         />
       ))}
-      {remaining > 0 ? (
-        <Pressable style={styles.loadMoreButton} onPress={onLoadMore}>
-          <Text style={styles.loadMoreText}>
-            Load {Math.min(EVENTS_PAGE_SIZE, remaining)} more
-          </Text>
-          <Text style={styles.loadMoreCount}>
-            {events.length} of {totalCount}
-          </Text>
-        </Pressable>
-      ) : totalCount > INITIAL_PAST_EVENTS ? (
-        <Text style={styles.sectionCompleteText}>Showing all {totalCount}</Text>
-      ) : null}
+      {label && labelPlacement === 'bottom' ? <TimelineSectionLabel text={label} /> : null}
+      {loadMorePlacement === 'bottom' ? loadMoreControl : null}
     </View>
   );
 }

@@ -10,6 +10,8 @@ import * as usersService from '@/utilities/users-service';
 import { dvw } from '@/utilities/responsive-dimensions';
 import { useReliableWindowWidth } from '@/utilities/use-reliable-window-width';
 
+const MOBILE_NAV_RESERVED_HEIGHT = 88;
+
 // export default function TabLayout() {
 //   const colorScheme = useColorScheme();
 //   return (
@@ -56,12 +58,16 @@ export default function RootLayout() {
       }
     }, [isLoggedIn, isPublicRoute, router]);
 
+    const handleLogout = () => {
+      setCurrentUser(null);
+    };
+
     return (
       <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
         <EventsProvider enabled={isLoggedIn}>
           <AnimatedSplashOverlay />
           <View style={[styles.shell, isMobile && styles.shellMobile]} testID="app-shell">
-            {showSidebar && <AppSidebar />}
+            {showSidebar && <AppSidebar onLogout={handleLogout} />}
             <View style={[styles.content, isMobile && showSidebar && styles.contentWithMobileNav]} testID="app-content">
               <Stack screenOptions={{ headerShown: false }} />
             </View>
@@ -92,8 +98,12 @@ const styles = StyleSheet.create({
     backgroundColor: Palette.bgVoid,
   },
   contentWithMobileNav: {
-    paddingBottom: Platform.OS === 'web'
-      ? 'calc(80px + env(safe-area-inset-bottom))' as any
-      : 80,
+    height: Platform.OS === 'web'
+      ? `calc(100dvh - ${MOBILE_NAV_RESERVED_HEIGHT}px - env(safe-area-inset-bottom))` as any
+      : undefined,
+    maxHeight: Platform.OS === 'web'
+      ? `calc(100dvh - ${MOBILE_NAV_RESERVED_HEIGHT}px - env(safe-area-inset-bottom))` as any
+      : undefined,
+    paddingBottom: Platform.OS === 'web' ? 0 : MOBILE_NAV_RESERVED_HEIGHT,
   },
 });

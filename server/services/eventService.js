@@ -19,6 +19,7 @@ const SMALL_BODY_EVENT_TYPES = ["Asteroid Flyby", "Comet Flyby"];
 const SMALL_BODY_TIMELINE_PAST_LIMIT = 30;
 const SMALL_BODY_TIMELINE_FUTURE_LIMIT = 60;
 const METEOR_SHOWER_EVENT_TYPE = "Meteor Shower";
+const VISIBLE_BODY_EVENT_TYPE = "Visible Body";
 let eventsRefreshBlockedUntil = 0;
 const smallBodyRefreshes = new Map();
 const timelineRefreshes = new Map();
@@ -409,7 +410,117 @@ async function buildTimelineListFromCache({ windowStart, windowEnd, now }) {
   });
 }
 
-module.exports = { getEvents, getSpacewalks, getUpcomingList, getTimelineList };
+module.exports = { getEvents, getSpacewalks, getUpcomingList, getTimelineList, persistVisibleBodyEvent };
+
+async function persistVisibleBodyEvent(input = {}) {
+  const visibleBodies = Array.isArray(input.visible_bodies) ? input.visible_bodies : [];
+  const startTime = normalizePersistedEventDate(input.date || input.start_time);
+
+  if (!startTime) {
+    const error = new Error("date is required");
+    error.status = 400;
+    throw error;
+  }
+
+  if (visibleBodies.length === 0) {
+    const error = new Error("visible_bodies is required");
+    error.status = 400;
+    throw error;
+  }
+
+  const saved = await eventQueries.saveEvent({
+    name: "Visible bodies tonight",
+    startTime,
+    endTime: null,
+    datePrecision: input.date_precision || "Day",
+    description: normalizeVisibleBodyDescription(input.description, visibleBodies),
+    eventType: VISIBLE_BODY_EVENT_TYPE,
+    webcastLive: false,
+    videoUrl: null,
+    infoUrl: serializeVisibleBodyPayload(visibleBodies),
+    imageUrl: normalizeNullableString(input.image_url) || firstVisibleBodyImage(visibleBodies),
+    locationId: await resolveVisibleBodyLocationId(input),
+  });
+
+  return {
+    id: saved.event_id,
+    event_id: saved.event_id,
+    category: "event",
+    name: saved.name,
+    type: VISIBLE_BODY_EVENT_TYPE,
+    date: saved.start_time,
+    end_date: saved.end_time || null,
+    date_precision: saved.date_precision,
+    description: saved.description,
+    location: normalizeNullableString(input.location),
+    latitude: null,
+    longitude: null,
+    webcast_live: false,
+    video_url: null,
+    video_urls: [],
+    external_url: null,
+    external_urls: [],
+    image_url: saved.image_url,
+    launch_details: null,
+    visible_bodies: visibleBodies,
+  };
+}
+
+async function resolveVisibleBodyLocationId(input) {
+  const latitude = Number(input.latitude);
+  const longitude = Number(input.longitude);
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+
+  const location = await locationQueries.findOrCreateLocation({
+    lat: latitude,
+    long: longitude,
+    name: normalizeNullableString(input.location),
+  });
+  return location.location_id;
+}
+
+function serializeVisibleBodyPayload(visibleBodies) {
+  return JSON.stringify({
+    kind: "visible_bodies",
+    visible_bodies: visibleBodies,
+  });
+}
+
+function normalizePersistedEventDate(value) {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+function normalizeVisibleBodyDescription(description, visibleBodies) {
+  const provided = normalizeNullableString(description);
+  if (provided) return provided;
+
+  return visibleBodies
+    .map((body) => {
+      const name = normalizeNullableString(body.body);
+      if (!name) return null;
+      const altitudeNumber = Number(body.altitude_degrees);
+      const altitude = Number.isFinite(altitudeNumber) ? `${altitudeNumber.toFixed(1)} deg` : null;
+      const constellation = normalizeNullableString(body.constellation);
+      return [name, altitude ? `alt ${altitude}` : null, constellation].filter(Boolean).join(": ");
+    })
+    .filter(Boolean)
+    .join(" | ");
+}
+
+function firstVisibleBodyImage(visibleBodies) {
+  for (const body of visibleBodies) {
+    const imageUrl = normalizeNullableString(body.image_url);
+    if (imageUrl) return imageUrl;
+  }
+  return null;
+}
+
+function normalizeNullableString(value) {
+  const text = String(value || "").trim();
+  return text || null;
+}
 
 async function decorateEventsWithUserSaveState(events, userId) {
   if (!Array.isArray(events)) return [];

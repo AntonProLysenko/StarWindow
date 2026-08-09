@@ -171,6 +171,11 @@ export interface EventLinkResponse {
   external_urls?: string[];
 }
 
+export interface PersistVisibleBodyEventResponse extends EventListItem {
+  event_id: number;
+  id: number;
+}
+
 /** Fetch a 0–100 viewing score for a coordinate (GET /api/score). */
 export async function fetchViewingScore(
   lat: number,
@@ -221,6 +226,18 @@ export async function saveUserEvent(eventId: number | string): Promise<SaveUserE
     `${API_BASE}/api/user-events`,
     'POST',
     { event_id: eventId }
+  );
+}
+
+export async function persistVisibleBodyEvent(
+  event: EventListItem,
+  signal?: AbortSignal
+): Promise<PersistVisibleBodyEventResponse> {
+  return sendRequest<EventListItem, PersistVisibleBodyEventResponse>(
+    `${API_BASE}/api/events/visible-body`,
+    'POST',
+    event,
+    { signal }
   );
 }
 

@@ -36,6 +36,7 @@ import {
   deleteUserEvent,
   fetchLaunchLinks,
   fetchViewingScore,
+  persistVisibleBodyEvent,
   saveUserEvent,
   updateSavedUserEvent,
   type EventListItem,
@@ -53,6 +54,7 @@ const VIDEO_LINK_ACCENT = Palette.accentRed;
 const INFO_LINK_ACCENT = '#B46CFF';
 const OTHER_LINK_ACCENT = '#5EA88E';
 const OTHER_LINK_TEXT = Palette.textPrimary;
+const MOBILE_NAV_RESERVED_HEIGHT = 88;
 
 // ImgBB upload — reads the key from EXPO_PUBLIC_IMGBB_API_KEY (see .env).
 const IMGBB_API_KEY = process.env.EXPO_PUBLIC_IMGBB_API_KEY;
@@ -99,7 +101,11 @@ export function EventModal({
   onClose: () => void;
   onNavigateEvent?: (direction: 'next' | 'previous') => boolean | void;
   onSavedEventUpdated?: (updates: { event_comment?: string | null; event_rating?: number | null }) => void;
-  onSavedStateChange?: (eventId: number | string, saved: boolean) => void;
+  onSavedStateChange?: (
+    eventId: number | string,
+    saved: boolean,
+    details?: { event?: EventListItem | null; user_event_id?: string | null }
+  ) => void;
   userId: number | null;
   userLat: number | null;
   userLon: number | null;
@@ -111,7 +117,6 @@ export function EventModal({
   const [liveLaunchLinks, setLiveLaunchLinks] = useState<EventLinkResponse | null>(null);
   const isLaunch = event.category === 'launch';
   const accent = isLaunch ? LAUNCH_ACCENT : EVENT_ACCENT;
-  const canSaveEvent = /^\d+$/.test(String(event.event_id));
   const fallbackIcon = fallbackIconSource(event);
   const { visible, tooFar, distanceMiles } = describeVisibility(event, userLat, userLon);
   const videoUrls = getEventUrls(event.video_urls, event.video_url, liveLaunchLinks?.video_urls, liveLaunchLinks?.video_url);
@@ -131,6 +136,8 @@ export function EventModal({
   const hasWebcast = videoUrls.length > 0 || event.webcast_live;
   const visibleBodies = getVisibleBodies(event);
   const hasVisibleBodySlider = visibleBodies.length > 0;
+  const modalDate = getModalEventDate(event);
+  const modalDatePrecision = getModalEventDatePrecision(event);
   const isMeteorShower = isMeteorShowerEvent(event);
   const isSpacewalk = isSpacewalkEvent(event);
   const suppressViewingScore = isNonViewingScoreEvent(event);
@@ -150,11 +157,15 @@ export function EventModal({
   const [scoreLoading, setScoreLoading] = useState(false);
 
   // --- saved state ---
+  const canPersistVisibleBodyEvent = isPersistableVisibleBodyEvent(event);
+  const [saveableEventId, setSaveableEventId] = useState<number | string>(() => event.event_id);
+  const canSaveEvent = isNumericEventId(saveableEventId) || canPersistVisibleBodyEvent;
   const [saved, setSaved] = useState(() => getEventSavedState(event));
   const [savedId, setSavedId] = useState<string | null>(() => (
     event.user_event_id != null ? String(event.user_event_id) : null
   ));
   const [saveBusy, setSaveBusy] = useState(false);
+  const [persistingEvent, setPersistingEvent] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
   const [note, setNote] = useState(() => getSavedEventNote(event));
@@ -495,9 +506,12 @@ export function EventModal({
       return;
     }
 
+    if (!isNumericEventId(saveableEventId)) return;
+
     const controller = new AbortController();
-    checkEventSaved(event.event_id, controller.signal)
+    checkEventSaved(saveableEventId, controller.signal)
       .then((r) => {
+        if (controller.signal.aborted) return;
         setSaved(r.saved);
         setSavedId(r.user_event_id != null ? String(r.user_event_id) : null);
         setNote(r.event_comment ?? '');
@@ -511,10 +525,11 @@ export function EventModal({
         })
       .catch(() => {});
     return () => controller.abort();
-  }, [canSaveEvent, userId, event]);
+  }, [canSaveEvent, userId, event, saveableEventId]);
 
   useEffect(() => {
     const currentNote = getSavedEventNote(event);
+    setSaveableEventId(event.event_id);
     setSaved(getEventSavedState(event));
     setSavedId(event.user_event_id != null ? String(event.user_event_id) : null);
     setNote(currentNote);
@@ -552,7 +567,7 @@ export function EventModal({
   }
 
   async function handleSaveToggle() {
-    if (!canSaveEvent || userId == null || saveBusy) return;
+    if (!canSaveEvent || userId == null || saveBusy || persistingEvent) return;
     setSaveError(null);
 
     if (!saved) {
@@ -560,12 +575,25 @@ export function EventModal({
       setSaved(true);
       setSaveBusy(true);
       try {
-        const res = await saveUserEvent(event.event_id);
+        const saveableEvent = await ensureSaveableEvent();
+        const eventId = saveableEvent?.event_id;
+        if (eventId == null || !saveableEvent) throw new Error('Event cannot be saved');
+        const res = await saveUserEvent(eventId);
+        const savedEvent: EventListItem = {
+          ...saveableEvent,
+          saved: true,
+          user_event_id: res.user_event_id,
+          visible_bodies: event.visible_bodies ?? saveableEvent.visible_bodies,
+        };
         setSavedId(res.user_event_id);
         onSavedStateChange?.(event.event_id, true);
-      } catch {
+        onSavedStateChange?.(eventId, true, {
+          user_event_id: res.user_event_id,
+          event: savedEvent,
+        });
+      } catch (error) {
         setSaved(false); // rollback
-        setSaveError('Could not save. Try again.');
+        setSaveError(error instanceof Error ? error.message : 'Could not save. Try again.');
       } finally {
         setSaveBusy(false);
       }
@@ -582,12 +610,31 @@ export function EventModal({
         setImages([]);
         onSavedEventUpdated?.({ event_comment: null });
         onSavedStateChange?.(event.event_id, false);
+        onSavedStateChange?.(saveableEventId, false);
       } catch {
         setSaved(true); // rollback
         setSaveError('Could not remove. Try again.');
       } finally {
         setSaveBusy(false);
       }
+    }
+  }
+
+  async function ensureSaveableEvent(): Promise<EventListItem | null> {
+    if (isNumericEventId(saveableEventId)) return { ...event, event_id: saveableEventId };
+    if (!isPersistableVisibleBodyEvent(event)) return null;
+
+    setPersistingEvent(true);
+    try {
+      const persisted = await persistVisibleBodyEvent(event);
+      setSaveableEventId(persisted.event_id);
+      return {
+        ...event,
+        ...persisted,
+        visible_bodies: event.visible_bodies ?? persisted.visible_bodies,
+      };
+    } finally {
+      setPersistingEvent(false);
     }
   }
 
@@ -742,9 +789,32 @@ export function EventModal({
       { scale: anim.interpolate({ inputRange: [0, 1], outputRange: [0.96, 1] }) },
     ],
   };
+  const saveAction = canSaveEvent ? (
+    <>
+      <Pressable
+        style={[
+          styles.saveBtn,
+          isMobile && styles.saveBtnMobile,
+          saved && styles.saveBtnSaved,
+          (userId == null || saveBusy || persistingEvent) && styles.saveBtnDisabled,
+        ]}
+        onPress={handleSaveToggle}
+        disabled={userId == null || saveBusy || persistingEvent}
+        aria-label={saved ? 'Remove saved event' : 'Save event'}>
+        <Text style={[styles.saveBtnText, saved && styles.saveBtnTextSaved]}>
+          {userId == null ? 'Log in to save' : persistingEvent ? 'Preparing...' : saved ? '✓ Saved' : 'Save event'}
+        </Text>
+      </Pressable>
+      {saveError ? <Text style={styles.saveError}>{saveError}</Text> : null}
+    </>
+  ) : null;
 
   return (
-    <View style={[styles.root, Platform.OS === 'web' && ({ position: 'fixed' } as object)]}>
+    <View style={[
+      styles.root,
+      Platform.OS === 'web' && ({ position: 'fixed' } as object),
+      isMobile && styles.rootMobileWithNav,
+    ]}>
       {/* Backdrop — click to close. */}
       <Animated.View style={[styles.backdrop, { opacity: anim }]}>
         <Pressable style={StyleSheet.absoluteFill} onPress={onClose} aria-label="Close dialog" />
@@ -811,8 +881,10 @@ export function EventModal({
               <Text style={[styles.title, isMobile && styles.titleMobile]}>{event.name}</Text>
 
               {/* Date + countdown */}
-              <Text style={[styles.date, isMobile && styles.dateMobile]}>{formatEventDate(event.date, event.date_precision)}</Text>
-              <EventCountdown date={event.date} />
+              <Text style={[styles.date, isMobile && styles.dateMobile]}>{formatEventDate(modalDate, modalDatePrecision)}</Text>
+              <EventCountdown date={modalDate} />
+
+              {saveAction}
 
               {/* Location */}
               {event.location ? (
@@ -916,16 +988,16 @@ export function EventModal({
                 </View>
               ) : null}
 
-              {canSaveEvent ? (
+              {false ? (
                 <Pressable
                   style={[
                     styles.saveBtn,
                     isMobile && styles.saveBtnMobile,
                     saved && styles.saveBtnSaved,
-                    (userId == null || saveBusy) && styles.saveBtnDisabled,
+                    (userId == null || saveBusy || persistingEvent) && styles.saveBtnDisabled,
                   ]}
                   onPress={handleSaveToggle}
-                  disabled={userId == null || saveBusy}
+                  disabled={userId == null || saveBusy || persistingEvent}
                   aria-label={saved ? 'Remove saved event' : 'Save event'}>
                   <Text style={[styles.saveBtnText, saved && styles.saveBtnTextSaved]}>
                     {userId == null ? 'Log in to save' : saved ? '✓ Saved' : 'Save event'}
@@ -1498,6 +1570,44 @@ function getEventSavedState(event: EventListItem): boolean {
   return event.user_event_id != null || Boolean(event.saved);
 }
 
+function getModalEventDate(event: EventListItem): string | null {
+  if (!isVisibleBodyEvent(event) || !event.date) return event.date;
+
+  const date = new Date(event.date);
+  if (Number.isNaN(date.getTime())) return event.date;
+
+  const isMidnight = date.getHours() === 0 && date.getMinutes() === 0 && date.getSeconds() === 0;
+  const isDayOnly = `${event.date_precision ?? ''}`.toLowerCase() === 'day';
+  if (!isMidnight && !isDayOnly) return event.date;
+
+  date.setHours(22, 0, 0, 0);
+  return date.toISOString();
+}
+
+function getModalEventDatePrecision(event: EventListItem): string | null {
+  return isVisibleBodyEvent(event) && `${event.date_precision ?? ''}`.toLowerCase() === 'day'
+    ? 'Hour'
+    : event.date_precision;
+}
+
+function isNumericEventId(eventId: number | string | null | undefined): boolean {
+  return /^\d+$/.test(String(eventId ?? ''));
+}
+
+function isPersistableVisibleBodyEvent(event: EventListItem): boolean {
+  return (
+    !isNumericEventId(event.event_id) &&
+    isVisibleBodyEvent(event) &&
+    Boolean(event.date) &&
+    getVisibleBodies(event).length > 0
+  );
+}
+
+function isVisibleBodyEvent(event: EventListItem): boolean {
+  const type = `${event.type ?? ''}`.toLowerCase();
+  return type.includes('visible') && type.includes('body');
+}
+
 function getVisibleBodies(event: EventListItem): VisibleBodyEventItem[] {
   if (!Array.isArray(event.visible_bodies)) return [];
 
@@ -1638,6 +1748,11 @@ const styles = StyleSheet.create({
     zIndex: 1000,
     overflow: 'hidden',
     overscrollBehavior: 'none',
+  },
+  rootMobileWithNav: {
+    bottom: Platform.OS === 'web'
+      ? `calc(${MOBILE_NAV_RESERVED_HEIGHT}px + env(safe-area-inset-bottom))` as any
+      : MOBILE_NAV_RESERVED_HEIGHT,
   },
   backdrop: {
     position: 'absolute',

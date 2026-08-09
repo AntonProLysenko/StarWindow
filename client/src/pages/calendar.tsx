@@ -40,6 +40,7 @@ const SHOOTING_STAR_DELAYS = [0, 2400];
 function calendarEventToEventListItem(event: CalendarEvent): EventListItem {
   const type = event.type ?? 'Event';
   const isLaunch = event.category === 'launch' || type.toLowerCase().includes('launch');
+  const isVisibleBody = type.toLowerCase().includes('visible') && type.toLowerCase().includes('body');
 
   return {
     id: event.sourceId ?? event.id,
@@ -48,7 +49,7 @@ function calendarEventToEventListItem(event: CalendarEvent): EventListItem {
     name: event.title,
     type,
     date: event.startDate,
-    date_precision: event.datePrecision ?? null,
+    date_precision: isVisibleBody && event.datePrecision === 'Day' ? 'Hour' : event.datePrecision ?? null,
     description: event.detail,
     image_url: event.imageUrl ?? null,
     location: event.location ?? null,
@@ -61,6 +62,11 @@ function calendarEventToEventListItem(event: CalendarEvent): EventListItem {
     external_urls: event.externalUrls ?? [],
     launch_details: event.launchDetails ?? null,
     visible_bodies: event.visibleBodies ?? undefined,
+    saved: event.saved,
+    user_event_id: event.userEventId ?? null,
+    event_comment: event.eventComment ?? null,
+    event_rating: event.eventRating ?? null,
+    user_event_images: event.userEventImages ?? [],
     radiant: event.radiant ?? null,
     radiant_declination_degrees: event.radiantDeclinationDegrees ?? null,
     zhr: event.zhr ?? null,
@@ -117,6 +123,103 @@ function getCalendarNavigationKey(event: CalendarEvent) {
 function getCalendarEventTime(event: CalendarEvent) {
   const time = new Date(event.startDate).getTime();
   return Number.isNaN(time) ? Infinity : time;
+}
+
+function getCalendarDayKey(value?: string | null) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function isVisibleBodyCalendarEvent(event: CalendarEvent) {
+  const type = normalizeEventTypeName(event.type);
+  return type.includes('visible') && type.includes('body');
+}
+
+function isNumericCalendarEventId(eventId: number | string | null | undefined) {
+  return /^\d+$/.test(String(eventId ?? ''));
+}
+
+function normalizeVisibleBodyCalendarDate(event: CalendarEvent): CalendarEvent {
+  if (!isVisibleBodyCalendarEvent(event)) return event;
+
+  const date = new Date(event.startDate);
+  if (Number.isNaN(date.getTime())) return event;
+  if (date.getHours() !== 0 || date.getMinutes() !== 0 || date.getSeconds() !== 0) return event;
+
+  date.setHours(22, 0, 0, 0);
+  return {
+    ...event,
+    startDate: date.toISOString(),
+    time: '10:00 PM',
+    datePrecision: event.datePrecision === 'Day' ? 'Hour' : event.datePrecision,
+  };
+}
+
+function normalizeVisibleBodyCalendarDetails(event: CalendarEvent): CalendarEvent {
+  if (!isVisibleBodyCalendarEvent(event) || event.visibleBodies?.length) return normalizeVisibleBodyCalendarDate(event);
+  const parsedBodies = parseVisibleBodiesFromDetail(event.detail) ?? [];
+  return normalizeVisibleBodyCalendarDate({
+    ...event,
+    visibleBodies: parsedBodies,
+    imageUrl: event.imageUrl ?? parsedBodies.find((body) => body.image_url)?.image_url ?? null,
+  });
+}
+
+function mergeVisibleBodyCalendarEvent(liveEvent: CalendarEvent, persistedEvent: CalendarEvent): CalendarEvent {
+  const normalizedLiveEvent = normalizeVisibleBodyCalendarDate(liveEvent);
+  return {
+    ...normalizedLiveEvent,
+    id: String(persistedEvent.eventId ?? persistedEvent.sourceId ?? persistedEvent.id),
+    sourceId: persistedEvent.sourceId ?? persistedEvent.eventId ?? liveEvent.sourceId,
+    eventId: persistedEvent.eventId ?? persistedEvent.sourceId ?? liveEvent.eventId,
+    saved: persistedEvent.saved,
+    userEventId: persistedEvent.userEventId ?? null,
+    eventComment: persistedEvent.eventComment ?? null,
+    eventRating: persistedEvent.eventRating ?? null,
+    userEventImages: persistedEvent.userEventImages ?? [],
+  };
+}
+
+function parseVisibleBodiesFromDetail(detail?: string | null): NonNullable<CalendarEvent['visibleBodies']> {
+  const text = String(detail || '').trim();
+  if (!text) return [];
+
+  return text
+    .split('|')
+    .map((part): NonNullable<CalendarEvent['visibleBodies']>[number] | null => {
+      const [namePart, ...detailParts] = part.split(':');
+      const name = namePart.trim();
+      if (!name) return null;
+      const details = detailParts.join(':');
+      return {
+        body: name,
+        altitude_degrees: extractDetailNumber(details, /alt\s+(-?\d+(?:\.\d+)?)/i),
+        azimuth_degrees: extractDetailNumber(details, /az\s+(-?\d+(?:\.\d+)?)/i),
+        distance_from_earth_km: extractDetailNumber(details, /([\d,]+(?:\.\d+)?)\s*km/i),
+        constellation: extractDetailText(details, /constellation\s+([^,|]+)/i),
+        magnitude: extractDetailNumber(details, /mag\s+(-?\d+(?:\.\d+)?)/i),
+        image_url: null,
+        image_source: null,
+      };
+    })
+    .filter((body): body is NonNullable<CalendarEvent['visibleBodies']>[number] => Boolean(body));
+}
+
+function extractDetailNumber(text: string, pattern: RegExp) {
+  const match = text.match(pattern);
+  if (!match) return null;
+  const number = Number(match[1].replace(/,/g, ''));
+  return Number.isFinite(number) ? number : null;
+}
+
+function extractDetailText(text: string, pattern: RegExp) {
+  const match = text.match(pattern);
+  return match ? match[1].trim() : null;
 }
 
 function normalizeEventTypeName(value?: string | null) {
@@ -202,7 +305,7 @@ export default function CalendarScreen() {
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [selectedProfileEventTypes, setSelectedProfileEventTypes] = useState<string[]>([]);
   const [didLoadProfileEventTypes, setDidLoadProfileEventTypes] = useState(false);
-  const [savedEventIds, setSavedEventIds] = useState<Set<string>>(() => new Set());
+  const [savedEventsById, setSavedEventsById] = useState<Map<string, EventListItem>>(() => new Map());
   const userId = getUser()?.user_id ?? null;
   const { events: sharedEvents, isLoading: sharedEventsLoading, error: sharedEventsError } = useSharedEvents();
 
@@ -225,8 +328,47 @@ export default function CalendarScreen() {
     const sharedCalendarEvents = sharedEvents
       .map((event, index) => eventListItemToCalendarEvent(event, index))
       .filter((event): event is CalendarEvent => event !== null);
-    return [...sharedCalendarEvents, ...visibleBodyEvents];
-  }, [sharedEvents, visibleBodyEvents]);
+    const savedVisibleBodyCalendarEvents = [...savedEventsById.values()]
+      .map((event, index) => eventListItemToCalendarEvent(event, index))
+      .filter((event): event is CalendarEvent => event !== null)
+      .filter(isVisibleBodyCalendarEvent)
+      .map(normalizeVisibleBodyCalendarDetails);
+    const liveVisibleBodyDayKeys = new Set(visibleBodyEvents.map((event) => getCalendarDayKey(event.startDate)));
+    const persistedVisibleBodiesByDay = new Map<string, CalendarEvent>();
+
+    for (const event of [...savedVisibleBodyCalendarEvents, ...sharedCalendarEvents]) {
+      if (!isVisibleBodyCalendarEvent(event)) continue;
+      const dayKey = getCalendarDayKey(event.startDate);
+      if (!dayKey || persistedVisibleBodiesByDay.has(dayKey)) continue;
+      persistedVisibleBodiesByDay.set(dayKey, event);
+    }
+
+    const sharedEventsWithoutLiveVisibleDuplicates = sharedCalendarEvents.filter((event) => {
+      if (!isVisibleBodyCalendarEvent(event)) return true;
+      return !liveVisibleBodyDayKeys.has(getCalendarDayKey(event.startDate));
+    });
+    const mergedVisibleBodyEvents = visibleBodyEvents.map((event) => {
+      const persistedEvent = persistedVisibleBodiesByDay.get(getCalendarDayKey(event.startDate));
+      return persistedEvent ? mergeVisibleBodyCalendarEvent(event, persistedEvent) : event;
+    });
+    const sharedVisibleBodyDayKeys = new Set(
+      sharedEventsWithoutLiveVisibleDuplicates
+        .filter(isVisibleBodyCalendarEvent)
+        .map((event) => getCalendarDayKey(event.startDate))
+    );
+    const savedVisibleBodyEventsWithoutLiveMatch = savedVisibleBodyCalendarEvents.filter(
+      (event) => {
+        const dayKey = getCalendarDayKey(event.startDate);
+        return !liveVisibleBodyDayKeys.has(dayKey) && !sharedVisibleBodyDayKeys.has(dayKey);
+      }
+    );
+
+    return [
+      ...sharedEventsWithoutLiveVisibleDuplicates,
+      ...mergedVisibleBodyEvents,
+      ...savedVisibleBodyEventsWithoutLiveMatch,
+    ];
+  }, [sharedEvents, savedEventsById, visibleBodyEvents]);
 
   const userFilteredEvents = useMemo(() => {
     if (!getToken() || !didLoadProfileEventTypes) return events;
@@ -288,7 +430,7 @@ export default function CalendarScreen() {
     let isActive = true;
 
     if (userId == null) {
-      setSavedEventIds(new Set());
+      setSavedEventsById(new Map());
       return () => {
         isActive = false;
       };
@@ -298,7 +440,7 @@ export default function CalendarScreen() {
     fetchSavedUserEvents(controller.signal)
       .then((savedEvents) => {
         if (!isActive || controller.signal.aborted) return;
-        setSavedEventIds(new Set(savedEvents.map((event) => String(event.event_id))));
+        setSavedEventsById(new Map(savedEvents.map((event) => [String(event.event_id), event])));
       })
       .catch(() => {});
 
@@ -425,20 +567,41 @@ export default function CalendarScreen() {
     }
   }
 
-  function handleSavedStateChange(eventId: number | string, saved: boolean) {
-    setSavedEventIds((current) => {
-      const next = new Set(current);
-      if (saved) {
-        next.add(String(eventId));
+  function handleSavedStateChange(
+    eventId: number | string,
+    saved: boolean,
+    details?: { event?: EventListItem | null; user_event_id?: string | null }
+  ) {
+    setSavedEventsById((current) => {
+      const next = new Map(current);
+      if (saved && details?.event) {
+        next.set(String(details.event.event_id), details.event);
+      } else if (saved && selectedEvent && isNumericCalendarEventId(eventId)) {
+        next.set(String(eventId), {
+          ...selectedEvent,
+          event_id: eventId,
+          saved: true,
+          user_event_id: details?.user_event_id ?? null,
+        });
       } else {
         next.delete(String(eventId));
       }
       return next;
     });
+
+    if (saved && details?.event) {
+      setSelectedEvent((current) => current ? {
+        ...current,
+        ...details.event,
+        visible_bodies: current.visible_bodies ?? details.event?.visible_bodies,
+        saved: true,
+        user_event_id: details.user_event_id ?? details.event?.user_event_id ?? null,
+      } : current);
+    }
   }
 
   function isSavedCalendarEvent(event: CalendarEvent) {
-    return event.eventId != null && savedEventIds.has(String(event.eventId));
+    return Boolean(event.saved) || (event.eventId != null && savedEventsById.has(String(event.eventId)));
   }
 
   function handleFilterSelect(filter: string) {

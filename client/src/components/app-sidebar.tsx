@@ -37,7 +37,11 @@ const navItems = [
   },
 ] as const;
 
-export function AppSidebar() {
+type AppSidebarProps = {
+  onLogout?: () => void;
+};
+
+export function AppSidebar({ onLogout }: AppSidebarProps = {}) {
   const pathname = usePathname();
   const router = useRouter();
   const width = useReliableWindowWidth();
@@ -49,6 +53,7 @@ export function AppSidebar() {
 
   const handleLogout = () => {
     usersService.logOut();
+    onLogout?.();
     router.replace('/');
   };
 

@@ -1,5 +1,6 @@
 const express = require("express");
 const router = express.Router();
+const ensureLoggedIn = require("../../config/ensureLoggedIn");
 const eventService = require("../../services/eventService");
 
 // GET /api/events?limit=&from_date=&to_date=
@@ -35,6 +36,19 @@ router.get("/list", async (req, res) => {
       ? await eventService.getTimelineList({ includePast, pastDays, futureDays, fromDate, toDate, userId, timelineOrder })
       : await eventService.getUpcomingList({ userId, timelineOrder });
     res.json(results);
+  } catch (error) {
+    const status = error.status || 500;
+    res.status(status).json({ error: error.message, status });
+  }
+});
+
+// POST /api/events/visible-body
+// Persist a synthetic visible-body calendar/dashboard item as a real event row
+// so it can be saved to user_events and annotated with notes/photos.
+router.post("/visible-body", ensureLoggedIn, async (req, res) => {
+  try {
+    const event = await eventService.persistVisibleBodyEvent(req.body || {});
+    res.status(201).json(event);
   } catch (error) {
     const status = error.status || 500;
     res.status(status).json({ error: error.message, status });

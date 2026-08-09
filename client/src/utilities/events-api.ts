@@ -152,6 +152,16 @@ export type CalendarEvent = {
   location?: string | null;
   imageUrl?: string | null;
   visibleBodies?: VisibleBodyCalendarItem[];
+  saved?: boolean;
+  userEventId?: string | null;
+  eventComment?: string | null;
+  eventRating?: number | null;
+  userEventImages?: {
+    user_event_image_id: string;
+    image_url: string;
+    caption: string | null;
+    created_at: string;
+  }[];
   radiant?: string | null;
   radiantDeclinationDegrees?: number | string | null;
   zhr?: number | string | null;
@@ -308,6 +318,11 @@ type EventListCalendarInput = {
   longitude?: number | null;
   launch_details?: CalendarEvent['launchDetails'];
   visible_bodies?: VisibleBodyCalendarItem[];
+  saved?: boolean;
+  user_event_id?: string | null;
+  event_comment?: string | null;
+  event_rating?: number | null;
+  user_event_images?: CalendarEvent['userEventImages'];
 };
 
 export function eventListItemToCalendarEvent(event: EventListCalendarInput, index = 0): CalendarEvent | null {
@@ -340,6 +355,11 @@ export function eventListItemToCalendarEvent(event: EventListCalendarInput, inde
     location: event.location,
     imageUrl: event.image_url,
     visibleBodies: event.visible_bodies,
+    saved: event.saved,
+    userEventId: event.user_event_id ?? null,
+    eventComment: event.event_comment ?? null,
+    eventRating: event.event_rating ?? null,
+    userEventImages: event.user_event_images ?? [],
     radiant: event.radiant ?? null,
     radiantDeclinationDegrees: event.radiant_declination_degrees ?? null,
     zhr: event.zhr ?? null,
@@ -445,6 +465,7 @@ function toBodyCalendarEvents(bodies: RawBody[]): CalendarEvent[] {
 function toBodyCalendarEvent(observedDate: string, bodies: RawBody[]): CalendarEvent | null {
   const observed = parseApiDate(observedDate);
   if (Number.isNaN(observed.getTime())) return null;
+  observed.setHours(22, 0, 0, 0);
 
   const visibleBodies = bodies
     .filter((body): body is RawBody & { body: string } => Boolean(body.body))
@@ -673,7 +694,11 @@ export async function fetchVisibleBodyCalendarEvents(input?: CalendarEventsQuery
     `&from_date=${fromDate}&to_date=${toDate}`;
   const bodiesData = await fetchOptionalCalendarSource<BodiesResponse>(bodiesUrl, 'visible bodies');
 
-  return toBodyCalendarEvents(bodiesData?.results ?? []);
+  return toBodyCalendarEvents(bodiesData?.results ?? []).map((event) => ({
+    ...event,
+    latitude,
+    longitude,
+  }));
 }
 
 export async function fetchNextUpcomingLaunch(now = new Date()): Promise<UpcomingLaunch | null> {

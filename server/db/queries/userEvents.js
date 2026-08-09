@@ -540,7 +540,11 @@ async function getSavedEventsForUser(userId) {
 
   return result.rows.map((row) => {
     const videoUrls = parseUrlList(row.video_url);
-    const externalUrls = parseUrlList(row.info_url);
+    const visibleBody = isVisibleBodyType(row.type);
+    const visibleBodies = visibleBody
+      ? parseVisibleBodiesPayload(row.info_url) || parseVisibleBodiesFromDescription(row.description)
+      : undefined;
+    const externalUrls = visibleBody ? [] : parseUrlList(row.info_url);
 
     return {
       user_event_id: row.user_event_id,
@@ -552,7 +556,7 @@ async function getSavedEventsForUser(userId) {
       category: row.category,
       name: row.name,
       type: row.type,
-      date: row.date,
+      date: visibleBody ? normalizeVisibleBodySavedDate(row.date) : row.date,
       date_precision: row.date_precision,
       description: row.description,
       image_url: row.image_url,
@@ -564,6 +568,7 @@ async function getSavedEventsForUser(userId) {
       video_urls: videoUrls,
       external_url: externalUrls[0] || null,
       external_urls: externalUrls,
+      visible_bodies: visibleBodies,
       launch_details:
         row.category === "launch"
           ? {
@@ -578,6 +583,83 @@ async function getSavedEventsForUser(userId) {
           : null,
     };
   });
+}
+
+function isVisibleBodyType(type) {
+  const normalized = String(type || "").toLowerCase();
+  return normalized.includes("visible") && normalized.includes("body");
+}
+
+function normalizeVisibleBodySavedDate(value) {
+  if (!value) return value;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+
+  if (date.getHours() === 0 && date.getMinutes() === 0 && date.getSeconds() === 0) {
+    date.setHours(22, 0, 0, 0);
+  }
+
+  return date.toISOString();
+}
+
+function parseVisibleBodiesPayload(value) {
+  if (!value) return null;
+  try {
+    const parsed = JSON.parse(value);
+    const bodies = parsed?.visible_bodies;
+    if (!Array.isArray(bodies)) return null;
+    return bodies
+      .filter((body) => body && typeof body.body === "string" && body.body.trim())
+      .map((body) => ({
+        body: body.body,
+        altitude_degrees: body.altitude_degrees ?? null,
+        azimuth_degrees: body.azimuth_degrees ?? null,
+        distance_from_earth_km: body.distance_from_earth_km ?? null,
+        constellation: body.constellation ?? null,
+        magnitude: body.magnitude ?? null,
+        image_url: body.image_url ?? null,
+        image_source: body.image_source ?? null,
+      }));
+  } catch {
+    return null;
+  }
+}
+
+function parseVisibleBodiesFromDescription(description) {
+  const text = String(description || "").trim();
+  if (!text) return [];
+
+  return text
+    .split("|")
+    .map((part) => {
+      const [namePart, ...detailParts] = part.split(":");
+      const name = String(namePart || "").trim();
+      if (!name) return null;
+      const details = detailParts.join(":");
+      return {
+        body: name,
+        altitude_degrees: extractVisibleBodyNumber(details, /alt\s+(-?\d+(?:\.\d+)?)/i),
+        azimuth_degrees: extractVisibleBodyNumber(details, /az\s+(-?\d+(?:\.\d+)?)/i),
+        distance_from_earth_km: extractVisibleBodyNumber(details, /([\d,]+(?:\.\d+)?)\s*km/i),
+        constellation: extractVisibleBodyText(details, /constellation\s+([^,|]+)/i),
+        magnitude: extractVisibleBodyNumber(details, /mag\s+(-?\d+(?:\.\d+)?)/i),
+        image_url: null,
+        image_source: null,
+      };
+    })
+    .filter(Boolean);
+}
+
+function extractVisibleBodyNumber(text, pattern) {
+  const match = String(text || "").match(pattern);
+  if (!match) return null;
+  const number = Number(String(match[1]).replace(/,/g, ""));
+  return Number.isFinite(number) ? number : null;
+}
+
+function extractVisibleBodyText(text, pattern) {
+  const match = String(text || "").match(pattern);
+  return match ? match[1].trim() : null;
 }
 
 function parseUrlList(value) {
