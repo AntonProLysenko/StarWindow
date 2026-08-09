@@ -4,6 +4,15 @@
 /manifest.webmanifest
   Cache-Control: no-store, no-cache, must-revalidate, proxy-revalidate
 
+/favicon.ico
+  Cache-Control: no-store, no-cache, must-revalidate, proxy-revalidate
+
+/favicon.png
+  Cache-Control: no-store, no-cache, must-revalidate, proxy-revalidate
+
+/apple-touch-icon.png
+  Cache-Control: no-store, no-cache, must-revalidate, proxy-revalidate
+
 /_expo/static/*
   Cache-Control: public, max-age=31536000, immutable
 

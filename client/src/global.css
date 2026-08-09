@@ -79,12 +79,14 @@ body {
   }
 
   [data-testid='app-content'] {
-    height: calc(100dvh - env(safe-area-inset-top) - 88px - env(safe-area-inset-bottom)) !important;
-    max-height: calc(100dvh - env(safe-area-inset-top) - 88px - env(safe-area-inset-bottom)) !important;
+    height: calc(100dvh - env(safe-area-inset-top) - 72px - env(safe-area-inset-bottom) - 8px) !important;
+    max-height: calc(100dvh - env(safe-area-inset-top) - 72px - env(safe-area-inset-bottom) - 8px) !important;
   }
 
   [data-testid='app-sidebar'] {
-    bottom: 0 !important;
+    bottom: calc(env(safe-area-inset-bottom) + 8px) !important;
+    min-height: 72px !important;
+    padding-bottom: 8px !important;
   }
 }
 
