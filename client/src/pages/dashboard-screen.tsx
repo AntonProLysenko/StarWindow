@@ -168,13 +168,27 @@ function formatLaunchMeta(launch: UpcomingLaunch | null) {
   return detailParts.join(' | ') || 'Upcoming rocket launch.';
 }
 
+function parseEventDate(value?: string | null) {
+  if (!value) return null;
+
+  const direct = new Date(value);
+  if (!Number.isNaN(direct.getTime())) return direct;
+
+  const normalized = value.includes('T') ? value : value.replace(' ', 'T');
+  const withUtc = /(?:Z|[+-]\d{2}:?\d{2})$/.test(normalized) ? normalized : `${normalized}Z`;
+  const fallback = new Date(withUtc);
+  return Number.isNaN(fallback.getTime()) ? null : fallback;
+}
+
 function getEventTime(event: EventListItem) {
   if (!event.date) return Infinity;
-  const time = new Date(event.date).getTime();
-  return Number.isNaN(time) ? Infinity : time;
+  return parseEventDate(event.date)?.getTime() ?? Infinity;
 }
 
 function getNextSharedEvent(events: EventListItem[], predicate: (event: EventListItem) => boolean) {
+  const serverOrdered = events.find((event) => predicate(event) && event.timeline_section === 'upcoming');
+  if (serverOrdered) return serverOrdered;
+
   const now = Date.now();
   return events
     .filter((event) => predicate(event) && getEventTime(event) >= now)
@@ -182,6 +196,11 @@ function getNextSharedEvent(events: EventListItem[], predicate: (event: EventLis
 }
 
 function getLatestSharedEvent(events: EventListItem[], predicate: (event: EventListItem) => boolean) {
+  const serverPastEvents = events.filter((event) => predicate(event) && event.timeline_section === 'past');
+  if (serverPastEvents.length > 0) {
+    return [...serverPastEvents].sort((a, b) => getEventTime(b) - getEventTime(a))[0] ?? null;
+  }
+
   const now = Date.now();
   return events
     .filter((event) => predicate(event) && getEventTime(event) < now)

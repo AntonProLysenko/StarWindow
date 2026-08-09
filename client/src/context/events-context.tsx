@@ -53,6 +53,7 @@ export function EventsProvider({
           includePast: true,
           pastDays: SHARED_EVENTS_PAST_DAYS,
           futureDays: SHARED_EVENTS_FUTURE_DAYS,
+          timelineOrder: 'upcoming_first',
           signal: controller.signal,
         });
         if (controller.signal.aborted || requestIdRef.current !== requestId) return;

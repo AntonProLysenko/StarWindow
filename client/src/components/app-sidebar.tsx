@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { SymbolView } from 'expo-symbols';
 import { usePathname, useRouter } from 'expo-router';
-import { Image, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { Image, Platform, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Breakpoints, Palette, Radius, alpha } from '@/constants/tokens';
@@ -62,7 +62,12 @@ export function AppSidebar() {
         styles.rail,
         isTablet && styles.tabletRail,
         isMobile && styles.mobileBar,
-        isMobile && { paddingBottom: safeAreaInsets.bottom + 8 },
+        isMobile && Platform.OS === 'web' && ({ position: 'fixed' } as object),
+        isMobile && {
+          paddingBottom: Platform.OS === 'web'
+            ? 'calc(env(safe-area-inset-bottom) + 8px)' as any
+            : safeAreaInsets.bottom + 8,
+        },
       ]}>
       <View style={[styles.navGroup, isMobile && styles.navGroupMobile]}>
         {!isMobile && (
@@ -83,11 +88,18 @@ export function AppSidebar() {
               style={[styles.railTab, isTablet && styles.tabletTab, isMobile && styles.mobileTab, active && styles.railTabActive]}>
               {active && <View style={[styles.railTabIndicator, isTablet && styles.tabletTabIndicator, isMobile && styles.mobileTabIndicator]} />}
               {useIconTabs ? (
-                <SymbolView
-                  name={item.icon}
-                  size={24}
-                  tintColor={active ? Palette.accent : Palette.textMuted}
-                />
+                <>
+                  <SymbolView
+                    name={item.icon}
+                    size={22}
+                    tintColor={active ? Palette.accent : Palette.textMuted}
+                  />
+                  {isMobile ? (
+                    <Text style={[styles.mobileTabLabel, active && styles.mobileTabLabelActive]} numberOfLines={1}>
+                      {item.label}
+                    </Text>
+                  ) : null}
+                </>
               ) : (
                 <Text style={[styles.railTabLabel, active && styles.railTabLabelActive]}>
                   {item.label}
@@ -134,8 +146,14 @@ const styles = StyleSheet.create({
     width: 76,
   },
   mobileBar: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 2000,
+    elevation: 20,
     width: '100%',
-    minHeight: 72,
+    minHeight: Platform.OS === 'web' ? 'calc(72px + env(safe-area-inset-bottom))' as any : 72,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -145,6 +163,10 @@ const styles = StyleSheet.create({
     borderRightWidth: 0,
     borderTopWidth: 1,
     borderTopColor: Palette.borderSoft,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: -8 },
+    shadowOpacity: 0.2,
+    shadowRadius: 18,
   },
   navGroup: {
     alignItems: 'center',
@@ -185,11 +207,12 @@ const styles = StyleSheet.create({
     flex: 1,
     width: 'auto',
     minWidth: 44,
-    maxWidth: 64,
-    height: 48,
+    maxWidth: 68,
+    height: 54,
     borderRadius: Radius.md,
     alignItems: 'center',
     paddingHorizontal: 0,
+    gap: 2,
   },
   railTabActive: {
     backgroundColor: Palette.surfaceRaised,
@@ -225,6 +248,17 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
   },
   railTabLabelActive: {
+    color: Palette.accent,
+  },
+  mobileTabLabel: {
+    maxWidth: '100%',
+    color: Palette.textMuted,
+    fontSize: 9,
+    lineHeight: 11,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+  mobileTabLabelActive: {
     color: Palette.accent,
   },
   logoutTabHovered: {

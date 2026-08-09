@@ -28,7 +28,7 @@ export default function RootLayout() {
     const isLoggedIn = Boolean(usersService.getUser());
     const showSidebar = isLoggedIn && pathname !== '/signup' && pathname !== '/login';
     const isPublicRoute = pathname === '/' || pathname === '/login' || pathname === '/signup';
-    const isMobile = width > 0 && width < Breakpoints.tablet;
+    const isMobile = width < Breakpoints.tablet;
 
     useEffect(() => {
       const syncAuthState = () => {
@@ -61,7 +61,7 @@ export default function RootLayout() {
           <AnimatedSplashOverlay />
           <View style={[styles.shell, isMobile && styles.shellMobile]}>
             {showSidebar && <AppSidebar />}
-            <View style={styles.content}>
+            <View style={[styles.content, isMobile && showSidebar && styles.contentWithMobileNav]}>
               <Stack screenOptions={{ headerShown: false }} />
             </View>
           </View>
@@ -80,7 +80,7 @@ const styles = StyleSheet.create({
     minHeight: Platform.OS === 'web' ? '100dvh' as any : undefined,
   },
   shellMobile: {
-    flexDirection: 'column-reverse',
+    flexDirection: 'column',
   },
   content: {
     flex: 1,
@@ -89,5 +89,10 @@ const styles = StyleSheet.create({
     position: 'relative',
     overflow: 'hidden',
     backgroundColor: Palette.bgVoid,
+  },
+  contentWithMobileNav: {
+    paddingBottom: Platform.OS === 'web'
+      ? 'calc(80px + env(safe-area-inset-bottom))' as any
+      : 80,
   },
 });

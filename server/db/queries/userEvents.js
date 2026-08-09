@@ -17,6 +17,7 @@ module.exports = {
   saveUserEvent,
   deleteUserEvent,
   getUserEvent,
+  getUserEventLookup,
   getSavedEventsForUser,
   updateUserEventDetails,
   addUserEventImage,
@@ -180,6 +181,45 @@ async function getUserEvent(userId, eventId) {
     [userId, eventId]
   );
   return result.rows[0] || null;
+}
+
+async function getUserEventLookup(userId, eventIds) {
+  const ids = [...new Set(
+    (Array.isArray(eventIds) ? eventIds : [])
+      .map((eventId) => String(eventId ?? "").trim())
+      .filter((eventId) => /^\d+$/.test(eventId))
+  )];
+
+  if (!userId || ids.length === 0) return new Map();
+
+  const result = await database.query(
+    `
+      SELECT
+        ue.event_id,
+        ue.user_event_id,
+        ue.event_comment,
+        ue.event_rating,
+        COALESCE((
+          SELECT json_agg(
+            json_build_object(
+              'user_event_image_id', uei.user_event_image_id,
+              'image_url', uei.image_url,
+              'caption', uei.caption,
+              'created_at', uei.created_at
+            )
+            ORDER BY uei.created_at DESC, uei.user_event_image_id DESC
+          )
+          FROM public.user_event_images uei
+          WHERE uei.user_event_id = ue.user_event_id
+        ), '[]'::json) AS user_event_images
+      FROM public.user_events ue
+      WHERE ue.user_id = $1
+        AND ue.event_id = ANY($2::bigint[])
+    `,
+    [userId, ids]
+  );
+
+  return new Map(result.rows.map((row) => [String(row.event_id), row]));
 }
 
 async function updateUserEventDetails(userId, userEventId, data) {

@@ -62,6 +62,11 @@ export interface EventListItem {
   external_url?: string | null;
   external_urls?: string[];
   launch_details: LaunchDetails | null;
+  timeline_section?: 'past' | 'upcoming';
+  saved?: boolean;
+  user_event_id?: string | null;
+  event_comment?: string | null;
+  event_rating?: number | null;
   visible_bodies?: VisibleBodyEventItem[];
   radiant?: string | null;
   radiant_declination_degrees?: number | string | null;
@@ -233,6 +238,7 @@ type EventsListQuery = {
   futureDays?: number;
   fromDate?: string;
   toDate?: string;
+  timelineOrder?: 'upcoming_first';
   signal?: AbortSignal;
 };
 
@@ -248,10 +254,9 @@ export async function fetchEventsList(input?: AbortSignal | EventsListQuery): Pr
   if (query.futureDays != null) params.set('future_days', String(query.futureDays));
   if (query.fromDate) params.set('from_date', query.fromDate);
   if (query.toDate) params.set('to_date', query.toDate);
+  if (query.timelineOrder) params.set('timeline_order', query.timelineOrder);
   const url = `${API_BASE}/api/events/list${params.size > 0 ? `?${params}` : ''}`;
-  const res = await fetch(url, { signal: query.signal });
-  if (!res.ok) throw new Error(`events list request failed: ${res.status}`);
-  return res.json();
+  return sendRequest<null, EventListItem[]>(url, 'GET', null, { signal: query.signal });
 }
 
 export function updateSavedUserEvent(

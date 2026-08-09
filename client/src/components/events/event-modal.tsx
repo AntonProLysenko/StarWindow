@@ -150,8 +150,10 @@ export function EventModal({
   const [scoreLoading, setScoreLoading] = useState(false);
 
   // --- saved state ---
-  const [saved, setSaved] = useState(false);
-  const [savedId, setSavedId] = useState<string | null>(null);
+  const [saved, setSaved] = useState(() => Boolean(event.saved));
+  const [savedId, setSavedId] = useState<string | null>(() => (
+    event.user_event_id != null ? String(event.user_event_id) : null
+  ));
   const [saveBusy, setSaveBusy] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
@@ -481,11 +483,23 @@ export function EventModal({
   // --- seed saved state ---
   useEffect(() => {
     if (userId == null || !canSaveEvent) return;
+
+    if (event.saved !== undefined || event.user_event_id != null) {
+      setSaved(Boolean(event.saved));
+      setSavedId(event.user_event_id != null ? String(event.user_event_id) : null);
+      setNote(getSavedEventNote(event));
+      setSavedNote(getSavedEventNote(event));
+      setNoteEditing(!normalizeNote(getSavedEventNote(event)));
+      setNoteHovered(false);
+      setImages(getSavedEventImages(event));
+      return;
+    }
+
     const controller = new AbortController();
     checkEventSaved(event.event_id, controller.signal)
       .then((r) => {
         setSaved(r.saved);
-        setSavedId(r.user_event_id);
+        setSavedId(r.user_event_id != null ? String(r.user_event_id) : null);
         setNote(r.event_comment ?? '');
         setSavedNote(r.event_comment ?? '');
         setNoteEditing(!normalizeNote(r.event_comment));
@@ -497,10 +511,12 @@ export function EventModal({
         })
       .catch(() => {});
     return () => controller.abort();
-  }, [canSaveEvent, userId, event.event_id]);
+  }, [canSaveEvent, userId, event]);
 
   useEffect(() => {
     const currentNote = getSavedEventNote(event);
+    setSaved(Boolean(event.saved));
+    setSavedId(event.user_event_id != null ? String(event.user_event_id) : null);
     setNote(currentNote);
     setSavedNote(currentNote);
     setNoteEditing(!normalizeNote(currentNote));

@@ -22,7 +22,7 @@ import { OrbitalLoader } from '@/components/orbital-loader';
 import { Palette, Radius, Spacing } from '@/constants/tokens';
 import { useSharedEvents } from '@/context/events-context';
 import { getEventEmoji } from '@/lib/event-colors';
-import { fetchSavedUserEvents, type EventListItem, type VisibleBodyEventItem } from '@/lib/events-api';
+import { type EventListItem, type VisibleBodyEventItem } from '@/lib/events-api';
 import { ALL_EVENT_FILTER, EVENT_FILTER_OPTIONS, filterEvents } from '@/lib/event-icons';
 import { getOrRequestUserLocation } from '@/utilities/user-location-service';
 import { getUser } from '@/utilities/users-service';
@@ -32,7 +32,6 @@ const FUTURE_DAYS_TO_SHOW = 365;
 const ALL = ALL_EVENT_FILTER;
 const FILTER_OPTIONS = EVENT_FILTER_OPTIONS;
 const EMPTY_EVENTS: EventListItem[] = [];
-const EVENT_LIST_SETTLE_MS = 650;
 const PRIMARY_FILTERS: Set<string> = new Set(FILTER_OPTIONS);
 const CELESTIAL_TYPE_KEYWORDS = [
   'eclipse',
@@ -245,16 +244,35 @@ function getEventRouteKey(params: EventRouteParams) {
 
 function sameEventDate(left?: string | null, right?: string | null) {
   if (!left || !right) return true;
-  const leftTime = new Date(left).getTime();
-  const rightTime = new Date(right).getTime();
-  if (Number.isNaN(leftTime) || Number.isNaN(rightTime)) return true;
+  const leftTime = parseEventDate(left)?.getTime();
+  const rightTime = parseEventDate(right)?.getTime();
+  if (leftTime == null || rightTime == null) return true;
   return Math.abs(leftTime - rightTime) < 60 * 1000;
+}
+
+function parseEventDate(value?: string | null) {
+  if (!value) return null;
+
+  const direct = new Date(value);
+  if (!Number.isNaN(direct.getTime())) return direct;
+
+  const normalized = value.includes('T') ? value : value.replace(' ', 'T');
+  const withUtc = /(?:Z|[+-]\d{2}:?\d{2})$/.test(normalized) ? normalized : `${normalized}Z`;
+  const fallback = new Date(withUtc);
+  return Number.isNaN(fallback.getTime()) ? null : fallback;
 }
 
 function getEventTime(event: EventListItem) {
   if (!event.date) return Infinity;
-  const time = new Date(event.date).getTime();
-  return Number.isNaN(time) ? Infinity : time;
+  return parseEventDate(event.date)?.getTime() ?? Infinity;
+}
+
+function getTimelineSection(event: EventListItem) {
+  if (event.timeline_section === 'past' || event.timeline_section === 'upcoming') {
+    return event.timeline_section;
+  }
+
+  return getEventTime(event) < Date.now() ? 'past' : 'upcoming';
 }
 
 function getEventNavigationKey(event: EventListItem) {
@@ -339,13 +357,11 @@ export default function EventsScreen() {
   const routeParams = useLocalSearchParams<EventRouteParams>();
   const routeEventKey = getEventRouteKey(routeParams);
   const { events, isLoading: loading, error } = useSharedEvents();
-  const hasLoadedEvents = !loading && !error;
   const eventsVersionKey = useMemo(() => (
     events
       .map((event) => `${event.category}:${event.id}:${event.event_id}:${event.date ?? ''}`)
       .join('|')
   ), [events]);
-  const [eventsSettled, setEventsSettled] = useState(false);
   const [activeTypes, setActiveTypes] = useState<string[]>([]);
   const [filtersOpen, setFiltersOpen] = useState(false);
 
@@ -354,11 +370,10 @@ export default function EventsScreen() {
   const [openedRouteEventKey, setOpenedRouteEventKey] = useState<string | null>(null);
   const [userLat, setUserLat] = useState<number | null>(null);
   const [userLon, setUserLon] = useState<number | null>(null);
-  const [savedEventIds, setSavedEventIds] = useState<Set<string>>(() => new Set());
+  const [savedEventOverrides, setSavedEventOverrides] = useState<Map<string, boolean>>(() => new Map());
   const userId = getUser()?.user_id ?? null;
-  const [savedEventsLoading, setSavedEventsLoading] = useState(userId != null);
-  const pageLoading = loading || !eventsSettled || savedEventsLoading;
-  const eventsReady = !pageLoading && hasLoadedEvents && events.length > 0;
+  const pageLoading = loading;
+  const eventsReady = !pageLoading && !error && events.length > 0;
   const pageEvents = eventsReady ? events : EMPTY_EVENTS;
 
   // Resolve the user's location once (best-effort — modal degrades without it).
@@ -382,49 +397,8 @@ export default function EventsScreen() {
   }, []);
 
   useEffect(() => {
-    if (loading) {
-      setEventsSettled(false);
-      return;
-    }
-
-    const timeoutId = setTimeout(() => {
-      setEventsSettled(true);
-    }, error ? 0 : EVENT_LIST_SETTLE_MS);
-
-    return () => {
-      clearTimeout(timeoutId);
-    };
-  }, [error, eventsVersionKey, loading]);
-
-  useEffect(() => {
-    let isActive = true;
-
-    if (userId == null) {
-      setSavedEventsLoading(false);
-      setSavedEventIds(new Set());
-      return () => {
-        isActive = false;
-      };
-    }
-
-    const controller = new AbortController();
-    setSavedEventsLoading(true);
-    fetchSavedUserEvents(controller.signal)
-      .then((savedEvents) => {
-        if (!isActive || controller.signal.aborted) return;
-        setSavedEventIds(new Set(savedEvents.map((event) => String(event.event_id))));
-      })
-      .catch(() => {})
-      .finally(() => {
-        if (!isActive || controller.signal.aborted) return;
-        setSavedEventsLoading(false);
-      });
-
-    return () => {
-      isActive = false;
-      controller.abort();
-    };
-  }, [userId]);
+    setSavedEventOverrides((current) => (current.size === 0 ? current : new Map()));
+  }, [userId, eventsVersionKey]);
 
   // Filter options are derived from the types actually present in the data,
   // with "All" always first. Order preserves first-seen (already chronological).
@@ -464,10 +438,9 @@ export default function EventsScreen() {
   const filterToggleLabel = hasActiveFilter ? `Filters (${activeTypes.length})` : 'Filters';
 
   const { pastEvents, upcomingEvents } = useMemo(() => {
-    const now = Date.now();
     return {
-      pastEvents: visibleEvents.filter((event) => getEventTime(event) < now),
-      upcomingEvents: visibleEvents.filter((event) => getEventTime(event) >= now),
+      pastEvents: visibleEvents.filter((event) => getTimelineSection(event) === 'past'),
+      upcomingEvents: visibleEvents.filter((event) => getTimelineSection(event) === 'upcoming'),
     };
   }, [visibleEvents]);
 
@@ -511,19 +484,15 @@ export default function EventsScreen() {
   };
 
   function handleSavedStateChange(eventId: number | string, saved: boolean) {
-    setSavedEventIds((current) => {
-      const next = new Set(current);
-      if (saved) {
-        next.add(String(eventId));
-      } else {
-        next.delete(String(eventId));
-      }
+    setSavedEventOverrides((current) => {
+      const next = new Map(current);
+      next.set(String(eventId), saved);
       return next;
     });
   }
 
   function isSavedEvent(event: EventListItem) {
-    return savedEventIds.has(String(event.event_id));
+    return savedEventOverrides.get(String(event.event_id)) ?? Boolean(event.saved);
   }
 
   function handleFilterSelect(option: string) {

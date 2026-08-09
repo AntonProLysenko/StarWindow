@@ -4,6 +4,7 @@
 const eventQueries = require("../db/queries/events");
 const launchQueries = require("../db/queries/launches");
 const locationQueries = require("../db/queries/locations");
+const userEventQueries = require("../db/queries/userEvents");
 const meteorService = require("./meteorService");
 const smallBodyService = require("./smallBodyService");
 const { isCacheStale, TTL_MINUTES } = require("../middleware/cache");
@@ -215,7 +216,7 @@ async function getSpacewalks({ limit = 5, fromDate, toDate } = {}) {
  *
  * @returns {Promise<Array<object>>}
  */
-async function getUpcomingList() {
+async function getUpcomingList({ userId, timelineOrder } = {}) {
   const now = new Date();
   const nextYear = new Date(now.getTime() + 365 * 24 * 60 * 60 * 1000);
   const refreshWindow = {
@@ -226,11 +227,12 @@ async function getUpcomingList() {
 
   if (cached.length > 0) {
     queueRefreshExternalEventsForWindow(refreshWindow);
-    return cached;
+    return decorateEventsWithUserSaveState(applyTimelineOrder(cached, timelineOrder, now), userId);
   }
 
   await refreshExternalEventsForWindow(refreshWindow);
-  return buildUpcomingListFromCache(now, nextYear);
+  const refreshed = await buildUpcomingListFromCache(now, nextYear);
+  return decorateEventsWithUserSaveState(applyTimelineOrder(refreshed, timelineOrder, now), userId);
 }
 
 async function buildUpcomingListFromCache(now, nextYear) {
@@ -306,8 +308,8 @@ async function buildUpcomingListFromCache(now, nextYear) {
   });
 }
 
-async function getTimelineList({ includePast = false, pastDays = 365, futureDays = 365, fromDate, toDate } = {}) {
-  if (!includePast) return getUpcomingList();
+async function getTimelineList({ includePast = false, pastDays = 365, futureDays = 365, fromDate, toDate, userId, timelineOrder } = {}) {
+  if (!includePast) return getUpcomingList({ userId, timelineOrder });
 
   const now = new Date();
   const windowStart = fromDate ? new Date(fromDate) : new Date(now.getTime() - pastDays * 24 * 60 * 60 * 1000);
@@ -320,11 +322,12 @@ async function getTimelineList({ includePast = false, pastDays = 365, futureDays
 
   if (cached.length > 0) {
     queueRefreshExternalEventsForWindow(refreshWindow);
-    return cached;
+    return decorateEventsWithUserSaveState(applyTimelineOrder(cached, timelineOrder, now), userId);
   }
 
   await refreshExternalEventsForWindow(refreshWindow);
-  return buildTimelineListFromCache({ windowStart, windowEnd, now });
+  const refreshed = await buildTimelineListFromCache({ windowStart, windowEnd, now });
+  return decorateEventsWithUserSaveState(applyTimelineOrder(refreshed, timelineOrder, now), userId);
 }
 
 async function buildTimelineListFromCache({ windowStart, windowEnd, now }) {
@@ -407,6 +410,54 @@ async function buildTimelineListFromCache({ windowStart, windowEnd, now }) {
 }
 
 module.exports = { getEvents, getSpacewalks, getUpcomingList, getTimelineList };
+
+async function decorateEventsWithUserSaveState(events, userId) {
+  if (!Array.isArray(events)) return [];
+
+  if (!userId || events.length === 0) {
+    return events.map((event) => ({ ...event, saved: false }));
+  }
+
+  const savedByEventId = await userEventQueries.getUserEventLookup(
+    userId,
+    events.map((event) => event.event_id)
+  );
+
+  return events.map((event) => {
+    const saved = savedByEventId.get(String(event.event_id));
+
+    return {
+      ...event,
+      saved: Boolean(saved),
+      user_event_id: saved?.user_event_id ?? null,
+      event_comment: saved?.event_comment ?? null,
+      event_rating: saved?.event_rating ?? null,
+      user_event_images: saved?.user_event_images ?? [],
+    };
+  });
+}
+
+function applyTimelineOrder(events, timelineOrder, now = new Date()) {
+  if (!Array.isArray(events)) return [];
+
+  const nowMs = now.getTime();
+  const withSection = events.map((event) => ({
+    ...event,
+    timeline_section: getTimelineSection(event, nowMs),
+  }));
+
+  if (timelineOrder !== "upcoming_first") return withSection;
+
+  return [
+    ...withSection.filter((event) => event.timeline_section === "upcoming"),
+    ...withSection.filter((event) => event.timeline_section === "past"),
+  ];
+}
+
+function getTimelineSection(event, nowMs) {
+  const time = event.date ? new Date(event.date).getTime() : Infinity;
+  return Number.isFinite(time) && time < nowMs ? "past" : "upcoming";
+}
 
 function queueRefreshExternalEventsForWindow({ fromDate, toDate }) {
   const key = `${toDateKey(fromDate)}|${toDateKey(toDate)}`;
