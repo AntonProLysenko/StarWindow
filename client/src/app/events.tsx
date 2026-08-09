@@ -5,15 +5,13 @@
 // visually distinct (see EventCard). Clicking a card is a placeholder for now —
 // phase 2 will route to a per-event detail page.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { SymbolView } from 'expo-symbols';
 import {
-  type LayoutChangeEvent,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
-  useWindowDimensions,
   View,
 } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
@@ -21,7 +19,7 @@ import { useLocalSearchParams } from 'expo-router';
 import { EventCard } from '@/components/events/event-card';
 import { EventModal } from '@/components/events/event-modal';
 import { OrbitalLoader } from '@/components/orbital-loader';
-import { Breakpoints, Palette, Radius, Spacing } from '@/constants/tokens';
+import { Palette, Radius, Spacing } from '@/constants/tokens';
 import { useSharedEvents } from '@/context/events-context';
 import { getEventEmoji } from '@/lib/event-colors';
 import { fetchSavedUserEvents, type EventListItem, type VisibleBodyEventItem } from '@/lib/events-api';
@@ -338,8 +336,6 @@ function buildDashboardPreviewEvent(params: EventRouteParams): EventListItem | n
 }
 
 export default function EventsScreen() {
-  const { width } = useWindowDimensions();
-  const isMobile = width < Breakpoints.tablet;
   const routeParams = useLocalSearchParams<EventRouteParams>();
   const routeEventKey = getEventRouteKey(routeParams);
   const { events, isLoading: loading, error } = useSharedEvents();
@@ -352,11 +348,6 @@ export default function EventsScreen() {
   const [eventsSettled, setEventsSettled] = useState(false);
   const [activeTypes, setActiveTypes] = useState<string[]>([]);
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const listRef = useRef<ScrollView>(null);
-  const isMountedRef = useRef(false);
-  const alignFrameRef = useRef<ReturnType<typeof requestAnimationFrame> | null>(null);
-  const [upcomingAnchorY, setUpcomingAnchorY] = useState<number | null>(null);
-  const [didAlignToUpcoming, setDidAlignToUpcoming] = useState(false);
 
   // Modal + user context (location for the viewing score, user_id for saving).
   const [selectedEvent, setSelectedEvent] = useState<EventListItem | null>(null);
@@ -369,18 +360,6 @@ export default function EventsScreen() {
   const pageLoading = loading || !eventsSettled || savedEventsLoading;
   const eventsReady = !pageLoading && hasLoadedEvents && events.length > 0;
   const pageEvents = eventsReady ? events : EMPTY_EVENTS;
-
-  useEffect(() => {
-    isMountedRef.current = true;
-
-    return () => {
-      isMountedRef.current = false;
-      if (alignFrameRef.current != null) {
-        cancelAnimationFrame(alignFrameRef.current);
-        alignFrameRef.current = null;
-      }
-    };
-  }, []);
 
   // Resolve the user's location once (best-effort — modal degrades without it).
   useEffect(() => {
@@ -493,7 +472,7 @@ export default function EventsScreen() {
   }, [visibleEvents]);
 
   const displayedEvents = useMemo(
-    () => [...pastEvents, ...upcomingEvents],
+    () => [...upcomingEvents, ...pastEvents],
     [pastEvents, upcomingEvents]
   );
 
@@ -508,37 +487,6 @@ export default function EventsScreen() {
     setSelectedEvent(nextEvent);
     return true;
   }
-
-  useEffect(() => {
-    setDidAlignToUpcoming(false);
-    setUpcomingAnchorY(null);
-  }, [activeTypes, eventsVersionKey]);
-
-  const alignToUpcoming = useCallback(() => {
-    if (didAlignToUpcoming || upcomingAnchorY == null || !eventsReady) return;
-
-    if (alignFrameRef.current != null) {
-      cancelAnimationFrame(alignFrameRef.current);
-    }
-
-    alignFrameRef.current = requestAnimationFrame(() => {
-      alignFrameRef.current = null;
-      if (!isMountedRef.current) return;
-      listRef.current?.scrollTo({ y: Math.max(upcomingAnchorY - 4, 0), animated: false });
-      setDidAlignToUpcoming(true);
-    });
-  }, [didAlignToUpcoming, eventsReady, upcomingAnchorY]);
-
-  useEffect(() => {
-    alignToUpcoming();
-  }, [alignToUpcoming]);
-
-  const handleUpcomingLayout = useCallback((event: LayoutChangeEvent) => {
-    const nextY = event.nativeEvent.layout.y;
-    setUpcomingAnchorY((current) => (
-      current != null && Math.abs(current - nextY) < 1 ? current : nextY
-    ));
-  }, []);
 
   useEffect(() => {
     if (!routeEventKey || openedRouteEventKey === routeEventKey || !eventsReady) return;
@@ -689,13 +637,25 @@ export default function EventsScreen() {
         </View>
       ) : (
         <ScrollView
-          ref={listRef}
-          style={[styles.list, isMobile && styles.mobileSnapScroll]}
+          style={styles.list}
           contentContainerStyle={styles.listContent}
-          decelerationRate={isMobile ? 'fast' : 'normal'}
-          disableIntervalMomentum={isMobile}
-          showsVerticalScrollIndicator={false}
-          onContentSizeChange={alignToUpcoming}>
+          showsVerticalScrollIndicator={false}>
+          {upcomingEvents.length > 0 ? (
+            <View style={styles.timelineSection}>
+              {pastEvents.length > 0 ? (
+                <TimelineSectionLabel text="UPCOMING EVENTS" />
+              ) : null}
+              {upcomingEvents.map((event) => (
+                <EventCard
+                  key={`${event.category}-${event.id}`}
+                  event={event}
+                  isSaved={isSavedEvent(event)}
+                  onPress={handleEventClick}
+                />
+              ))}
+            </View>
+          ) : null}
+
           {pastEvents.length > 0 ? (
             <View style={styles.timelineSection}>
               <TimelineSectionLabel text="PAST EVENTS" />
@@ -709,22 +669,6 @@ export default function EventsScreen() {
               ))}
             </View>
           ) : null}
-
-          <View
-            style={styles.timelineSection}
-            onLayout={handleUpcomingLayout}>
-            {pastEvents.length > 0 && upcomingEvents.length > 0 ? (
-              <TimelineSectionLabel text="UPCOMING EVENTS" />
-            ) : null}
-            {upcomingEvents.map((event) => (
-            <EventCard
-              key={`${event.category}-${event.id}`}
-              event={event}
-              isSaved={isSavedEvent(event)}
-              onPress={handleEventClick}
-            />
-            ))}
-          </View>
         </ScrollView>
       )}
 
@@ -895,11 +839,6 @@ const styles = StyleSheet.create({
   list: {
     flex: 1,
   },
-  mobileSnapScroll: {
-    scrollSnapType: 'y mandatory',
-    overscrollBehaviorY: 'contain',
-    WebkitOverflowScrolling: 'touch',
-  } as any,
   listContent: {
     paddingHorizontal: 24,
     paddingTop: 4,

@@ -1,7 +1,8 @@
-import { useEffect, useRef } from 'react';
+import React, { useEffect, useRef } from 'react';
 import {
   Animated,
   Easing,
+  Platform,
   StyleSheet,
   Text,
   View,
@@ -19,16 +20,21 @@ type OrbitalLoaderProps = {
 };
 
 const SUN_COLOR = '#FDB813';
+const ORBIT_PROJECTION = 0.66;
+const ORBIT_TILT = '-12deg';
+const ORBIT_SAMPLE_COUNT = 32;
+const ORBIT_TRACE_SEGMENTS = 88;
 
 const PLANETS = [
-  { name: 'venus', orbit: 0.36, orbitY: 0.23, planet: 0.095, color: '#F2C94C', duration: 3200, phase: 0, ring: false },
-  { name: 'earth', orbit: 0.56, orbitY: 0.36, planet: 0.09, color: '#2F80ED', duration: 4400, phase: 0.28, ring: false },
-  { name: 'mars', orbit: 0.74, orbitY: 0.47, planet: 0.082, color: '#D94A38', duration: 5600, phase: 0.58, ring: false },
-  { name: 'saturn', orbit: 0.92, orbitY: 0.58, planet: 0.105, color: '#D8B16A', duration: 7600, phase: 0.82, ring: true },
+  { name: 'mercury', orbit: 0.29, eccentricity: 0.2056, planet: 0.065, color: '#B9AFA5', duration: 2400, phase: 0.12, ring: false },
+  { name: 'venus', orbit: 0.44, eccentricity: 0.0068, planet: 0.086, color: '#F2C94C', duration: 3800, phase: 0, ring: false },
+  { name: 'earth', orbit: 0.6, eccentricity: 0.0167, planet: 0.084, color: '#2F80ED', duration: 5200, phase: 0.28, ring: false },
+  { name: 'mars', orbit: 0.76, eccentricity: 0.0934, planet: 0.074, color: '#D94A38', duration: 7200, phase: 0.58, ring: false },
+  { name: 'saturn', orbit: 0.94, eccentricity: 0.0565, planet: 0.1, color: '#D8B16A', duration: 11600, phase: 0.82, ring: true },
 ] as const;
-const ORBIT_INPUT_RANGE = [0, 0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1, 1.125, 1.25, 1.375, 1.5, 1.625, 1.75, 1.875, 2];
-const ORBIT_UNIT_X = [1, 0.707, 0, -0.707, -1, -0.707, 0, 0.707, 1, 0.707, 0, -0.707, -1, -0.707, 0, 0.707, 1];
-const ORBIT_UNIT_Y = [0, 0.707, 1, 0.707, 0, -0.707, -1, -0.707, 0, 0.707, 1, 0.707, 0, -0.707, -1, -0.707, 0];
+const ORBIT_INPUT_RANGE = Array.from({ length: ORBIT_SAMPLE_COUNT * 2 + 1 }, (_, index) => index / ORBIT_SAMPLE_COUNT);
+const ORBIT_UNIT_X = ORBIT_INPUT_RANGE.map((point) => Math.cos(point * Math.PI * 2));
+const ORBIT_UNIT_Y = ORBIT_INPUT_RANGE.map((point) => Math.sin(point * Math.PI * 2));
 
 export function OrbitalLoader({ label, size = 96, compact = false, style }: OrbitalLoaderProps) {
   const spinsRef = useRef(PLANETS.map(() => new Animated.Value(0)));
@@ -99,32 +105,24 @@ export function OrbitalLoader({ label, size = 96, compact = false, style }: Orbi
     <View style={[styles.container, compact && styles.containerCompact, style]} accessibilityRole="progressbar">
       <View style={[styles.stage, { width: size, height: size }]}>
         {PLANETS.map((planet, index) => {
-          const orbitSize = size * planet.orbit;
-          const orbitHeight = size * planet.orbitY;
+          const orbitWidth = size * planet.orbit;
+          const semiMajorAxis = orbitWidth / 2;
+          const semiMinorAxis = semiMajorAxis * Math.sqrt(1 - planet.eccentricity ** 2) * ORBIT_PROJECTION;
+          const orbitHeight = semiMinorAxis * 2;
+          const focusOffsetX = semiMajorAxis * planet.eccentricity;
           const planetSize = size * planet.planet;
           const translateX = spins[index].interpolate({
             inputRange: ORBIT_INPUT_RANGE,
-            outputRange: ORBIT_UNIT_X.map((point) => point * (orbitSize / 2)),
+            outputRange: ORBIT_UNIT_X.map((point) => point * semiMajorAxis - focusOffsetX),
           });
           const translateY = spins[index].interpolate({
             inputRange: ORBIT_INPUT_RANGE,
-            outputRange: ORBIT_UNIT_Y.map((point) => point * (orbitHeight / 2)),
+            outputRange: ORBIT_UNIT_Y.map((point) => point * semiMinorAxis),
           });
 
           return (
-            <View key={planet.color} style={styles.orbitPlane}>
-              <View
-                style={[
-                  styles.orbitRing,
-                  {
-                    width: orbitSize,
-                    height: orbitHeight,
-                    borderRadius: orbitSize / 2,
-                    marginLeft: -orbitSize / 2,
-                    marginTop: -orbitHeight / 2,
-                  },
-                ]}
-              />
+            <View key={planet.name} style={styles.orbitPlane}>
+              <OrbitTrace width={orbitWidth} height={orbitHeight} offsetX={focusOffsetX} />
               <Animated.View
                 style={[
                   styles.planetWrap,
@@ -204,6 +202,71 @@ export function OrbitalLoader({ label, size = 96, compact = false, style }: Orbi
   );
 }
 
+function OrbitTrace({ width, height, offsetX }: { width: number; height: number; offsetX: number }) {
+  const left = -width / 2 - offsetX;
+  const top = -height / 2;
+
+  if (Platform.OS === 'web') {
+    return (
+      <View pointerEvents="none" style={[styles.orbitTrace, { width, height, left, top }]}>
+        {/*
+          React Native Web can host raw SVG nodes; native gets the segmented
+          fallback below because there is no react-native-svg dependency here.
+        */}
+        {React.createElement(
+          'svg' as any,
+          {
+            width,
+            height,
+            viewBox: `0 0 ${width} ${height}`,
+            style: styles.orbitSvg,
+          },
+          React.createElement('ellipse' as any, {
+            cx: width / 2,
+            cy: height / 2,
+            rx: Math.max(width / 2 - 0.75, 0),
+            ry: Math.max(height / 2 - 0.75, 0),
+            fill: 'none',
+            stroke: alpha(Palette.accentBlue, 0.26),
+            strokeWidth: 1.25,
+            vectorEffect: 'non-scaling-stroke',
+          })
+        )}
+      </View>
+    );
+  }
+
+  const radiusX = width / 2;
+  const radiusY = height / 2;
+  const dotSize = 1.15;
+
+  return (
+    <View pointerEvents="none" style={[styles.orbitTrace, { width, height, left, top }]}>
+      {Array.from({ length: ORBIT_TRACE_SEGMENTS }, (_, index) => {
+        const theta = (index / ORBIT_TRACE_SEGMENTS) * Math.PI * 2;
+        const x = radiusX + Math.cos(theta) * radiusX;
+        const y = radiusY + Math.sin(theta) * radiusY;
+
+        return (
+          <View
+            key={index}
+            style={[
+              styles.orbitDot,
+              {
+                width: dotSize,
+                height: dotSize,
+                borderRadius: dotSize / 2,
+                left: x - dotSize / 2,
+                top: y - dotSize / 2,
+              },
+            ]}
+          />
+        );
+      })}
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   container: {
     alignItems: 'center',
@@ -221,12 +284,18 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: '50%' as any,
     top: '50%' as any,
-    transform: [{ rotate: '-12deg' }],
+    transform: [{ rotate: ORBIT_TILT }],
   },
-  orbitRing: {
+  orbitTrace: {
     position: 'absolute',
-    borderWidth: 1,
-    borderColor: alpha(Palette.accentBlue, 0.24),
+  },
+  orbitSvg: {
+    display: 'block',
+    overflow: 'visible',
+  } as any,
+  orbitDot: {
+    position: 'absolute',
+    backgroundColor: alpha(Palette.accentBlue, 0.28),
   },
   planetWrap: {
     position: 'absolute',
