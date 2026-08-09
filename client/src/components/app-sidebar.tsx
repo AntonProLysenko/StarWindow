@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import { SymbolView } from 'expo-symbols';
 import { usePathname, useRouter } from 'expo-router';
-import { Image, Platform, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { Image, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Breakpoints, Palette, Radius, alpha } from '@/constants/tokens';
 import * as usersService from '@/utilities/users-service';
 import { dvw, dvh } from '@/utilities/responsive-dimensions';
+import { useReliableWindowWidth } from '@/utilities/use-reliable-window-width';
 
 const navItems = [
   {
@@ -39,7 +40,7 @@ const navItems = [
 export function AppSidebar() {
   const pathname = usePathname();
   const router = useRouter();
-  const { width } = useWindowDimensions();
+  const width = useReliableWindowWidth();
   const safeAreaInsets = useSafeAreaInsets();
   const [logoutHovered, setLogoutHovered] = useState(false);
   const isMobile = width < Breakpoints.tablet;
@@ -68,7 +69,8 @@ export function AppSidebar() {
             ? 'calc(env(safe-area-inset-bottom) + 8px)' as any
             : safeAreaInsets.bottom + 8,
         },
-      ]}>
+      ]}
+      testID="app-sidebar">
       <View style={[styles.navGroup, isMobile && styles.navGroupMobile]}>
         {!isMobile && (
           <Image

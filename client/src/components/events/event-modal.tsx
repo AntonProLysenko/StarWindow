@@ -150,7 +150,7 @@ export function EventModal({
   const [scoreLoading, setScoreLoading] = useState(false);
 
   // --- saved state ---
-  const [saved, setSaved] = useState(() => Boolean(event.saved));
+  const [saved, setSaved] = useState(() => getEventSavedState(event));
   const [savedId, setSavedId] = useState<string | null>(() => (
     event.user_event_id != null ? String(event.user_event_id) : null
   ));
@@ -485,7 +485,7 @@ export function EventModal({
     if (userId == null || !canSaveEvent) return;
 
     if (event.saved !== undefined || event.user_event_id != null) {
-      setSaved(Boolean(event.saved));
+      setSaved(getEventSavedState(event));
       setSavedId(event.user_event_id != null ? String(event.user_event_id) : null);
       setNote(getSavedEventNote(event));
       setSavedNote(getSavedEventNote(event));
@@ -515,7 +515,7 @@ export function EventModal({
 
   useEffect(() => {
     const currentNote = getSavedEventNote(event);
-    setSaved(Boolean(event.saved));
+    setSaved(getEventSavedState(event));
     setSavedId(event.user_event_id != null ? String(event.user_event_id) : null);
     setNote(currentNote);
     setSavedNote(currentNote);
@@ -1492,6 +1492,10 @@ function getSavedEventNote(event: EventListItem): string {
   return 'event_comment' in event && typeof event.event_comment === 'string'
     ? event.event_comment
     : '';
+}
+
+function getEventSavedState(event: EventListItem): boolean {
+  return event.user_event_id != null || Boolean(event.saved);
 }
 
 function getVisibleBodies(event: EventListItem): VisibleBodyEventItem[] {

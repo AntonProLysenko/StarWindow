@@ -1,6 +1,6 @@
 import { DarkTheme, DefaultTheme, ThemeProvider, Stack, usePathname, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Platform, StyleSheet, View, useColorScheme, useWindowDimensions } from 'react-native';
+import { Platform, StyleSheet, View, useColorScheme } from 'react-native';
 
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
 import { AppSidebar } from '@/components/app-sidebar';
@@ -8,6 +8,7 @@ import { Breakpoints, Palette } from '@/constants/tokens';
 import { EventsProvider } from '@/context/events-context';
 import * as usersService from '@/utilities/users-service';
 import { dvw } from '@/utilities/responsive-dimensions';
+import { useReliableWindowWidth } from '@/utilities/use-reliable-window-width';
 
 // export default function TabLayout() {
 //   const colorScheme = useColorScheme();
@@ -21,7 +22,7 @@ import { dvw } from '@/utilities/responsive-dimensions';
 
 export default function RootLayout() {
     const colorScheme = useColorScheme();
-    const { width } = useWindowDimensions();
+    const width = useReliableWindowWidth();
     const router = useRouter();
     const pathname = usePathname();
     const [currentUser, setCurrentUser] = useState<usersService.AuthUser | null>(() => usersService.getUser());
@@ -59,9 +60,9 @@ export default function RootLayout() {
       <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
         <EventsProvider enabled={isLoggedIn}>
           <AnimatedSplashOverlay />
-          <View style={[styles.shell, isMobile && styles.shellMobile]}>
+          <View style={[styles.shell, isMobile && styles.shellMobile]} testID="app-shell">
             {showSidebar && <AppSidebar />}
-            <View style={[styles.content, isMobile && showSidebar && styles.contentWithMobileNav]}>
+            <View style={[styles.content, isMobile && showSidebar && styles.contentWithMobileNav]} testID="app-content">
               <Stack screenOptions={{ headerShown: false }} />
             </View>
           </View>

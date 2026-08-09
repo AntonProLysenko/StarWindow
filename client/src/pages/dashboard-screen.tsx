@@ -14,8 +14,6 @@ import {
   SafeAreaView,
   Image,
   Linking,
-  Platform,
-  useWindowDimensions,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import * as Location from 'expo-location';
@@ -47,6 +45,7 @@ import { getUserLevelProgressLabel, getUserLevelProgressPercent } from '@/utilit
 import { getOrRequestUserLocation } from '@/utilities/user-location-service';
 import * as ambientSound from '@/utilities/ambient-sound-service';
 import * as usersService from '@/utilities/users-service';
+import { useReliableWindowWidth } from '@/utilities/use-reliable-window-width';
 import { dvw, dvh } from '@/utilities/responsive-dimensions';
 
 const STARS = Array.from({ length: 150 }, (_, i) => ({
@@ -66,41 +65,6 @@ const DASHBOARD_MAX_CONTENT_WIDTH = 1240;
 
 function isDashboardMobileWidth(width: number) {
   return width < DASHBOARD_MOBILE_BREAKPOINT;
-}
-
-function getBrowserViewportWidth() {
-  if (typeof window === 'undefined') return null;
-
-  return Math.max(
-    window.innerWidth || 0,
-    typeof document === 'undefined' ? 0 : document.documentElement?.clientWidth || 0,
-    window.visualViewport?.width || 0
-  );
-}
-
-function useDashboardWidth() {
-  const { width } = useWindowDimensions();
-  const [browserWidth, setBrowserWidth] = useState<number | null>(() => getBrowserViewportWidth());
-
-  useEffect(() => {
-    if (Platform.OS !== 'web') return;
-
-    const updateBrowserWidth = () => {
-      setBrowserWidth(getBrowserViewportWidth());
-    };
-    const visualViewport = window.visualViewport;
-
-    updateBrowserWidth();
-    window.addEventListener('resize', updateBrowserWidth);
-    visualViewport?.addEventListener('resize', updateBrowserWidth);
-
-    return () => {
-      window.removeEventListener('resize', updateBrowserWidth);
-      visualViewport?.removeEventListener('resize', updateBrowserWidth);
-    };
-  }, []);
-
-  return Math.max(width || 0, browserWidth || 0);
 }
 
 function formatMoonTrend(value: string | null) {
@@ -763,7 +727,7 @@ type DashboardScreenProps = {
 
 export default function DashboardScreen({ locked = false }: DashboardScreenProps = {}) {
   const router = useRouter();
-  const width = useDashboardWidth();
+  const width = useReliableWindowWidth();
   const today = new Date();
   const currentYear = today.getFullYear();
   const currentMonth = today.getMonth();
@@ -1550,6 +1514,7 @@ export default function DashboardScreen({ locked = false }: DashboardScreenProps
               }
               onPress={nasaArticle?.url ? () => openExternalUrl(nasaArticle.url) : undefined}
               locked={isLocked}
+              wide
             />
 
             <PreviewCard
@@ -1582,6 +1547,7 @@ export default function DashboardScreen({ locked = false }: DashboardScreenProps
                 )
               }
               locked={isLocked}
+              wide
             />
           </View>
 
@@ -1629,7 +1595,7 @@ function ViewingScoreBreakdown({
   score: number | null;
   inputs: NonNullable<ViewingScoreResponse['inputs']>;
 }) {
-  const width = useDashboardWidth();
+  const width = useReliableWindowWidth();
   const isMobile = isDashboardMobileWidth(width);
   const darkness = inputs.darkness_factor ?? null;
   const clouds = inputs.clouds_pct ?? null;
@@ -1728,6 +1694,7 @@ function PreviewCard({
   onPress,
   locked = false,
   fullWidth = false,
+  wide = false,
 }: {
   eyebrow: string;
   badge: string;
@@ -1738,17 +1705,18 @@ function PreviewCard({
   onPress?: () => void;
   locked?: boolean;
   fullWidth?: boolean;
+  wide?: boolean;
 }) {
   const router = useRouter();
-  const width = useDashboardWidth();
+  const width = useReliableWindowWidth();
   const isMobile = isDashboardMobileWidth(width);
   const handlePress = locked ? () => router.push('/signup' as any) : onPress;
   const metaLineCount = isMobile ? 2 : 3;
 
   return (
     <Pressable
-      style={[styles.previewCard, fullWidth && styles.previewCardFullWidth, isMobile && styles.previewCardMobile]}
-      testID={fullWidth ? 'dashboard-preview-card-full' : 'dashboard-preview-card'}
+      style={[styles.previewCard, wide && styles.previewCardWide, fullWidth && styles.previewCardFullWidth, isMobile && styles.previewCardMobile]}
+      testID={fullWidth ? 'dashboard-preview-card-full' : wide ? 'dashboard-preview-card-wide' : 'dashboard-preview-card'}
       onPress={handlePress}
       disabled={!handlePress}>
       <View
@@ -2016,7 +1984,7 @@ function IssThumb({
   pass: IssPass | null;
   variant?: 'card' | 'hero';
 }) {
-  const width = useDashboardWidth();
+  const width = useReliableWindowWidth();
   const isMobile = isDashboardMobileWidth(width);
   const duration = formatIssDuration(pass?.visible_duration_sec ?? pass?.duration_sec);
   const passTime = pass ? formatIssClock(pass.rise?.time) : 'No pass found';
@@ -2254,7 +2222,7 @@ function WeatherThumb({ weather }: { weather: WeatherResponse | null }) {
 }
 
 function WeatherBar({ label, value }: { label: string; value: number }) {
-  const width = useDashboardWidth();
+  const width = useReliableWindowWidth();
   const isMobile = isDashboardMobileWidth(width);
 
   if (isMobile) {
@@ -2803,6 +2771,11 @@ const styles = StyleSheet.create({
     flexBasis: '100%',
     minWidth: '100%' as any,
     width: '100%',
+  },
+  previewCardWide: {
+    flexBasis: '48%',
+    flexGrow: 1,
+    minWidth: 360,
   },
   previewThumb: {
     height: 168,
