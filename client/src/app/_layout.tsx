@@ -1,10 +1,10 @@
 import { DarkTheme, DefaultTheme, ThemeProvider, Stack, usePathname, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { StyleSheet, View, useColorScheme, useWindowDimensions } from 'react-native';
+import { Platform, StyleSheet, View, useColorScheme, useWindowDimensions } from 'react-native';
 
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
 import { AppSidebar } from '@/components/app-sidebar';
-import { Breakpoints } from '@/constants/tokens';
+import { Breakpoints, Palette } from '@/constants/tokens';
 import { EventsProvider } from '@/context/events-context';
 import * as usersService from '@/utilities/users-service';
 import { dvw } from '@/utilities/responsive-dimensions';
@@ -24,14 +24,15 @@ export default function RootLayout() {
     const { width } = useWindowDimensions();
     const router = useRouter();
     const pathname = usePathname();
-    const [isLoggedIn, setIsLoggedIn] = useState(() => Boolean(usersService.getUser()));
+    const [, setAuthRevision] = useState(0);
+    const isLoggedIn = Boolean(usersService.getUser());
     const showSidebar = isLoggedIn && pathname !== '/signup' && pathname !== '/login';
     const isPublicRoute = pathname === '/' || pathname === '/login' || pathname === '/signup';
-    const isMobile = width < Breakpoints.tablet;
+    const isMobile = width > 0 && width < Breakpoints.tablet;
 
     useEffect(() => {
       const syncAuthState = () => {
-        setIsLoggedIn(Boolean(usersService.getUser()));
+        setAuthRevision((revision) => revision + 1);
       };
 
       const unsubscribe = usersService.subscribeAuthChanges(syncAuthState);
@@ -73,6 +74,10 @@ const styles = StyleSheet.create({
   shell: {
     flex: 1,
     flexDirection: 'row',
+    backgroundColor: Palette.bgVoid,
+    overflow: 'hidden',
+    height: Platform.OS === 'web' ? '100dvh' as any : undefined,
+    minHeight: Platform.OS === 'web' ? '100dvh' as any : undefined,
   },
   shellMobile: {
     flexDirection: 'column-reverse',
@@ -80,5 +85,9 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     minWidth: dvw(0),
+    minHeight: 0,
+    position: 'relative',
+    overflow: 'hidden',
+    backgroundColor: Palette.bgVoid,
   },
 });

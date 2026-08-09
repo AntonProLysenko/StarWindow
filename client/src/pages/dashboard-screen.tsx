@@ -21,6 +21,7 @@ import * as Location from 'expo-location';
 import { Breakpoints, Palette, Radius, Spacing, alpha } from '@/constants/tokens';
 import { ShootingStar } from '@/components/shooting-star';
 import { SoundToggle } from '@/components/sound-toggle';
+import { OrbitalLoader } from '@/components/orbital-loader';
 import { MonthGrid } from '@/components/calendar/month-grid';
 import { StarMap } from '@/components/star-map';
 import { useSharedEvents } from '@/context/events-context';
@@ -652,6 +653,7 @@ type EventDetailRouteParams = {
   videoUrls?: string[] | null;
   externalUrl?: string | null;
   externalUrls?: string[] | null;
+  visibleBodies?: VisibleBody[];
   synthetic?: boolean;
 };
 
@@ -664,6 +666,20 @@ function eventDetailRoute(input: EventDetailRouteParams) {
   }
 
   return { pathname: '/events', params } as const;
+}
+
+function toVisibleBodyRouteItems(bodies: VisibleBody[]) {
+  return bodies
+    .filter((body) => body.body)
+    .map((body) => ({
+      body: body.body,
+      altitude_degrees: body.altitude_degrees ?? null,
+      azimuth_degrees: body.azimuth_degrees ?? null,
+      constellation: body.constellation ?? null,
+      magnitude: body.magnitude ?? null,
+      image_url: body.image_url ?? null,
+      image_source: body.image_source ?? null,
+    }));
 }
 
 function formatDateForQuery(date: Date) {
@@ -743,12 +759,16 @@ export default function DashboardScreen({ locked = false }: DashboardScreenProps
     () => getNextSharedEvent(sharedEvents, isSpacewalkEvent),
     [sharedEvents]
   );
+  const displayedSpacewalkEvent = useMemo(
+    () => nextUpcomingSpacewalkEvent ?? getLatestSharedEvent(sharedEvents, isSpacewalkEvent),
+    [nextUpcomingSpacewalkEvent, sharedEvents]
+  );
   const nextSpacewalk = useMemo(
     () => toUpcomingSpacewalk(
-      nextUpcomingSpacewalkEvent ?? getLatestSharedEvent(sharedEvents, isSpacewalkEvent),
+      displayedSpacewalkEvent,
       nextUpcomingSpacewalkEvent ? 'upcoming' : 'latest'
     ),
-    [nextUpcomingSpacewalkEvent, sharedEvents]
+    [displayedSpacewalkEvent, nextUpcomingSpacewalkEvent]
   );
   const isLaunchLoading = isEventsLoading;
   const launchError = eventsError ? 'Could not load upcoming launches' : null;
@@ -1181,7 +1201,11 @@ export default function DashboardScreen({ locked = false }: DashboardScreenProps
             </View>
 
             <View style={[styles.issHeroStage, isMobile && styles.issHeroStageMobile]}>
-              <IssThumb pass={nextIssPass} isLoading={isIssLoading} variant="hero" />
+              {isIssLoading ? (
+                <PreviewLoadingThumb label="Checking ISS orbit..." size={96} />
+              ) : (
+                <IssThumb pass={nextIssPass} variant="hero" />
+              )}
             </View>
           </View>
 
@@ -1195,7 +1219,13 @@ export default function DashboardScreen({ locked = false }: DashboardScreenProps
               badgeColor={Palette.accentBlue}
               title={calendarTitle}
               meta={calendarMeta}
-              thumb={<CalendarThumb events={currentMonthEvents} />}
+              thumb={
+                isEventsLoading || isLockedCalendarEventCountLoading ? (
+                  <PreviewLoadingThumb label="Loading calendar..." />
+                ) : (
+                  <CalendarThumb events={currentMonthEvents} />
+                )
+              }
               onPress={() => router.replace('/calendar' as any)}
               locked={isLocked}
             />
@@ -1239,7 +1269,13 @@ export default function DashboardScreen({ locked = false }: DashboardScreenProps
                   ? launchError
                   : formatLaunchMeta(nextLaunch)
               }
-              thumb={<LaunchThumb imageUrl={nextLaunch?.image ?? null} />}
+              thumb={
+                isLaunchLoading ? (
+                  <PreviewLoadingThumb label="Loading launch data..." />
+                ) : (
+                  <LaunchThumb imageUrl={nextLaunch?.image ?? null} />
+                )
+              }
               onPress={() => router.replace(eventDetailRoute({
                 eventId: nextLaunch?.event_id ?? null,
                 category: 'launch',
@@ -1281,7 +1317,13 @@ export default function DashboardScreen({ locked = false }: DashboardScreenProps
                   ? meteorError
                   : formatMeteorMeta(nextMeteorShower, Boolean(browserCoords))
               }
-              thumb={<MeteorThumb shower={nextMeteorShower} isLoading={isMeteorLoading} hasLocation={Boolean(browserCoords)} />}
+              thumb={
+                isMeteorLoading ? (
+                  <PreviewLoadingThumb label="Loading meteor shower..." />
+                ) : (
+                  <MeteorThumb shower={nextMeteorShower} hasLocation={Boolean(browserCoords)} />
+                )
+              }
               onPress={() => router.replace(eventDetailRoute({
                 eventId: nextMeteorShower?.event_id ?? nextMeteorShower?.id ?? null,
                 category: 'event',
@@ -1322,7 +1364,25 @@ export default function DashboardScreen({ locked = false }: DashboardScreenProps
                   ? bodiesError
                   : formatBodiesMeta(visibleBodies)
               }
-              thumb={<BodiesThumb bodies={visibleBodies} isLoading={isBodiesLoading} />}
+              thumb={
+                isBodiesLoading ? (
+                  <PreviewLoadingThumb label="Checking visible bodies..." />
+                ) : (
+                  <BodiesThumb bodies={visibleBodies} />
+                )
+              }
+              onPress={() => router.replace(eventDetailRoute({
+                category: 'event',
+                type: 'Visible Body',
+                name: "Today's Visible Bodies",
+                date: visibleBodies[0]?.observed_date ?? today.toISOString(),
+                datePrecision: 'Day',
+                description: formatBodiesMeta(visibleBodies),
+                imageUrl: visibleBodies.find((body) => body.image_url)?.image_url ?? null,
+                location: browserCoords ? locationLabel : null,
+                visibleBodies: toVisibleBodyRouteItems(visibleBodies),
+                synthetic: true,
+              }) as any)}
               locked={isLocked}
             />
 
@@ -1348,7 +1408,29 @@ export default function DashboardScreen({ locked = false }: DashboardScreenProps
                   ? spacewalkError
                   : formatSpacewalkMeta(nextSpacewalk)
               }
-              thumb={<SpacewalkThumb spacewalk={nextSpacewalk} isLoading={isSpacewalkLoading} />}
+              thumb={
+                isSpacewalkLoading ? (
+                  <PreviewLoadingThumb label="Loading spacewalks..." />
+                ) : (
+                  <SpacewalkThumb spacewalk={nextSpacewalk} />
+                )
+              }
+              onPress={() => router.replace(eventDetailRoute({
+                eventId: displayedSpacewalkEvent?.event_id ?? displayedSpacewalkEvent?.id ?? null,
+                category: 'event',
+                type: displayedSpacewalkEvent?.type ?? 'Spacewalk',
+                name: nextSpacewalk?.name ?? 'Spacewalk',
+                date: nextSpacewalk?.start ?? null,
+                datePrecision: displayedSpacewalkEvent?.date_precision ?? null,
+                description: nextSpacewalk?.description ?? formatSpacewalkMeta(nextSpacewalk),
+                imageUrl: nextSpacewalk?.image_url ?? null,
+                location: nextSpacewalk?.location ?? nextSpacewalk?.space_station ?? null,
+                videoUrl: displayedSpacewalkEvent?.video_url ?? null,
+                videoUrls: displayedSpacewalkEvent?.video_urls ?? null,
+                externalUrl: displayedSpacewalkEvent?.external_url ?? null,
+                externalUrls: displayedSpacewalkEvent?.external_urls ?? null,
+                synthetic: true,
+              }) as any)}
               locked={isLocked}
             />
 
@@ -1359,13 +1441,17 @@ export default function DashboardScreen({ locked = false }: DashboardScreenProps
               title={moonPhaseName}
               meta={`${formatMoonPercent(moonPhasePercent)} illuminated | ${formatMoonTrend(moonPhaseTrend)} | ${formatMoonDate(moonPhaseDate)}`}
               thumb={
-                <MoonThumb
-                  imageUrl={moonImageUrl}
-                  phaseName={moonPhaseName}
-                  phasePercent={moonPhasePercent}
-                  phaseAngle={moonPhaseAngle}
-                  phaseTrend={moonPhaseTrend}
-                />
+                moonPhasePercent === null ? (
+                  <PreviewLoadingThumb label="Loading moon phase..." size={86} />
+                ) : (
+                  <MoonThumb
+                    imageUrl={moonImageUrl}
+                    phaseName={moonPhaseName}
+                    phasePercent={moonPhasePercent}
+                    phaseAngle={moonPhaseAngle}
+                    phaseTrend={moonPhaseTrend}
+                  />
+                )
               }
               locked={isLocked}
               fullWidth
@@ -1393,7 +1479,13 @@ export default function DashboardScreen({ locked = false }: DashboardScreenProps
                   ? newsError
                   : formatNewsMeta(nasaArticle)
               }
-              thumb={<NewsThumb article={nasaArticle} />}
+              thumb={
+                isNewsLoading ? (
+                  <PreviewLoadingThumb label="Loading NASA news..." />
+                ) : (
+                  <NewsThumb article={nasaArticle} />
+                )
+              }
               onPress={nasaArticle?.url ? () => openExternalUrl(nasaArticle.url) : undefined}
               locked={isLocked}
             />
@@ -1420,7 +1512,13 @@ export default function DashboardScreen({ locked = false }: DashboardScreenProps
                   ? weatherError
                   : formatWeatherMeta(currentWeather)
               }
-              thumb={<WeatherThumb weather={currentWeather} isLoading={isWeatherLoading} />}
+              thumb={
+                isWeatherLoading ? (
+                  <PreviewLoadingThumb label="Loading weather..." />
+                ) : (
+                  <WeatherThumb weather={currentWeather} />
+                )
+              }
               locked={isLocked}
             />
           </View>
@@ -1632,6 +1730,14 @@ function CalendarThumb({ events }: { events: CalendarEvent[] }) {
   );
 }
 
+function PreviewLoadingThumb({ label, size = 76 }: { label: string; size?: number }) {
+  return (
+    <View style={styles.previewLoadingThumb}>
+      <OrbitalLoader label={label} size={size} compact />
+    </View>
+  );
+}
+
 function MoonThumb({
   imageUrl,
   phaseName,
@@ -1677,7 +1783,7 @@ function GeneratedMoonPhase({
   const illumination = getMoonIlluminationPercent(phasePercent, phaseAngle);
 
   if (illumination === null) {
-    return <View style={styles.moonLoading} />;
+    return <OrbitalLoader size={62} compact />;
   }
 
   const phaseKey = getMoonPhaseKey(phaseName, illumination, phaseAngle, phaseTrend);
@@ -1839,17 +1945,15 @@ function LaunchThumb({ imageUrl }: { imageUrl?: string | null }) {
 
 function IssThumb({
   pass,
-  isLoading,
   variant = 'card',
 }: {
   pass: IssPass | null;
-  isLoading: boolean;
   variant?: 'card' | 'hero';
 }) {
   const { width } = useWindowDimensions();
   const isMobile = width < Breakpoints.tablet;
   const duration = formatIssDuration(pass?.visible_duration_sec ?? pass?.duration_sec);
-  const passTime = isLoading ? 'Checking orbit...' : pass ? formatIssClock(pass.rise?.time) : 'No pass found';
+  const passTime = pass ? formatIssClock(pass.rise?.time) : 'No pass found';
   const stats = (
     <View style={[styles.issStatsRow, variant === 'hero' && styles.issHeroStatsRow, variant === 'hero' && isMobile && styles.issHeroStatsRowMobile]}>
       <View style={styles.issStatPill}>
@@ -1913,7 +2017,7 @@ function IssThumb({
   );
 }
 
-function BodiesThumb({ bodies, isLoading }: { bodies: VisibleBody[]; isLoading: boolean }) {
+function BodiesThumb({ bodies }: { bodies: VisibleBody[] }) {
   const topBodies = getTopVisibleBodies(bodies);
   const primaryBody = topBodies[0] ?? null;
   const imageUrl = primaryBody?.image_url ?? null;
@@ -1945,13 +2049,13 @@ function BodiesThumb({ bodies, isLoading }: { bodies: VisibleBody[]; isLoading: 
       <View style={styles.bodiesBottomRow}>
         <View style={styles.bodyNamePill}>
           <Text style={styles.bodyNameText} numberOfLines={1}>
-            {primaryBody?.body ?? (isLoading ? 'Loading...' : 'No bodies')}
+            {primaryBody?.body ?? 'No bodies'}
           </Text>
         </View>
         <View style={styles.bodiesReadout}>
           <Text style={styles.bodiesReadoutLabel}>VISIBLE TONIGHT</Text>
           <Text style={styles.bodiesReadoutValue}>
-            {isLoading ? 'Checking sky...' : formatCount(bodies.length, 'body', 'bodies')}
+            {formatCount(bodies.length, 'body', 'bodies')}
           </Text>
         </View>
       </View>
@@ -1961,11 +2065,9 @@ function BodiesThumb({ bodies, isLoading }: { bodies: VisibleBody[]; isLoading: 
 
 function MeteorThumb({
   shower,
-  isLoading,
   hasLocation,
 }: {
   shower: UpcomingMeteorShower | null;
-  isLoading: boolean;
   hasLocation: boolean;
 }) {
   const altitude = toNumber(shower?.radiant_max_altitude_degrees);
@@ -1984,19 +2086,19 @@ function MeteorThumb({
         <View style={styles.issStatPill}>
           <Text style={styles.issStatLabel}>PEAK</Text>
           <Text style={styles.issStatValue}>
-            {isLoading ? '...' : formatMeteorDate(shower?.date)}
+            {formatMeteorDate(shower?.date)}
           </Text>
         </View>
         <View style={styles.issStatPill}>
           <Text style={styles.issStatLabel}>BEST</Text>
           <Text style={styles.issStatValue}>
-            {isLoading ? '...' : shower?.best_time ? formatBestTimeLabel(shower.best_time) : '--'}
+            {shower?.best_time ? formatBestTimeLabel(shower.best_time) : '--'}
           </Text>
         </View>
         <View style={styles.issStatPill}>
           <Text style={styles.issStatLabel}>ZHR</Text>
           <Text style={styles.issStatValue}>
-            {isLoading ? '...' : shower?.zhr ?? '--'}
+            {shower?.zhr ?? '--'}
           </Text>
         </View>
         <View style={styles.issStatPill}>
@@ -2010,13 +2112,7 @@ function MeteorThumb({
   );
 }
 
-function SpacewalkThumb({
-  spacewalk,
-  isLoading,
-}: {
-  spacewalk: UpcomingSpacewalk | null;
-  isLoading: boolean;
-}) {
+function SpacewalkThumb({ spacewalk }: { spacewalk: UpcomingSpacewalk | null }) {
   const crewCount = spacewalk?.crew?.length ?? 0;
   const imageSource = spacewalk?.image_url
     ? { uri: spacewalk.image_url }
@@ -2039,7 +2135,7 @@ function SpacewalkThumb({
         <View style={styles.spacewalkReadout}>
           <Text style={styles.spacewalkReadoutLabel}>{spacewalk?.schedule_status === 'latest' ? 'LATEST EVA' : 'NEXT EVA'}</Text>
           <Text style={styles.spacewalkReadoutValue} numberOfLines={1}>
-            {isLoading ? 'Checking schedule...' : spacewalk ? formatSpacewalkDate(spacewalk.start) : 'No EVA'}
+            {spacewalk ? formatSpacewalkDate(spacewalk.start) : 'No EVA'}
           </Text>
         </View>
       </View>
@@ -2064,7 +2160,7 @@ function NewsThumb({ article }: { article: NewsArticle | null }) {
   );
 }
 
-function WeatherThumb({ weather, isLoading }: { weather: WeatherResponse | null; isLoading: boolean }) {
+function WeatherThumb({ weather }: { weather: WeatherResponse | null }) {
   const clouds = Math.max(0, Math.min(100, weather?.clouds_pct ?? 0));
   const humidity = Math.max(0, Math.min(100, weather?.humidity ?? 0));
   const weatherImage = getWeatherImageSource(weather?.conditions);
@@ -2080,7 +2176,7 @@ function WeatherThumb({ weather, isLoading }: { weather: WeatherResponse | null;
       <View style={styles.weatherReadout}>
         <Text style={styles.tileReadoutLabel}>CURRENT CONDITIONS</Text>
         <Text style={styles.weatherTempValue}>
-          {isLoading ? 'Loading...' : formatTemperature(weather?.temp, weather?.units)}
+          {formatTemperature(weather?.temp, weather?.units)}
         </Text>
       </View>
       <View style={styles.weatherBars}>
@@ -2652,6 +2748,15 @@ const styles = StyleSheet.create({
     flex: 1,
     width: '100%',
     height: '100%',
+  },
+  previewLoadingThumb: {
+    flex: 1,
+    width: '100%',
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Palette.bgDeep,
+    paddingHorizontal: 12,
   },
   previewBody: {
     padding: Spacing.sm,

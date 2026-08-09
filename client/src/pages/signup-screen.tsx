@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Audio } from 'expo-av';
+import { OrbitalLoader } from '@/components/orbital-loader';
 import { ShootingStar } from '@/components/shooting-star';
 import { Palette, Radius } from '@/constants/tokens';
 import * as eventTypesAPI from '@/utilities/event-types-api';
@@ -258,7 +259,7 @@ export default function SignUpScreen() {
                 <Text style={styles.stepCopy}>Pick the space events that should shape your StarWindow feed.</Text>
 
                 {isLoadingEventTypes ? (
-                  <Text style={styles.loadingText}>Loading event types...</Text>
+                  <OrbitalLoader label="Loading event types..." size={78} compact style={styles.eventTypeLoader} />
                 ) : (
                   <View style={[styles.eventTypeList, isMedium && styles.eventTypeListMobile]}>
                     {eventTypes.map((eventType) => {
@@ -593,6 +594,9 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginBottom: 16,
     textAlign: 'center',
+  },
+  eventTypeLoader: {
+    marginBottom: 16,
   },
   eventTypeList: {
     flexDirection: 'row',

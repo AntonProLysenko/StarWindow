@@ -29,7 +29,7 @@ export function EventsProvider({
 }) {
   const [state, setState] = useState<EventsState>({
     events: [],
-    isLoading: false,
+    isLoading: enabled,
     error: null,
   });
   const [refreshToken, setRefreshToken] = useState(0);
@@ -48,11 +48,7 @@ export function EventsProvider({
 
     (async () => {
       try {
-        setState((current) => (
-          current.isLoading && current.error === null
-            ? current
-            : { ...current, isLoading: true, error: null }
-        ));
+        setState({ events: [], isLoading: true, error: null });
         const data = await fetchEventsList({
           includePast: true,
           pastDays: SHARED_EVENTS_PAST_DAYS,
