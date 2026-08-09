@@ -14,11 +14,12 @@ import {
   SafeAreaView,
   Image,
   Linking,
+  Platform,
   useWindowDimensions,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import * as Location from 'expo-location';
-import { Breakpoints, Palette, Radius, Spacing, alpha } from '@/constants/tokens';
+import { Palette, Radius, Spacing, alpha } from '@/constants/tokens';
 import { ShootingStar } from '@/components/shooting-star';
 import { SoundToggle } from '@/components/sound-toggle';
 import { OrbitalLoader } from '@/components/orbital-loader';
@@ -60,6 +61,47 @@ const LOCATION_SETTINGS_MESSAGE = 'Enable browser location access in site settin
 const DASHBOARD_MAP_FALLBACK_CENTER: [number, number] = [39.157, -84.538];
 const DASHBOARD_MAP_ZOOM = 11;
 const UNKNOWN_OBSERVING_TIME = '--:--';
+const DASHBOARD_MOBILE_BREAKPOINT = 640;
+const DASHBOARD_MAX_CONTENT_WIDTH = 1240;
+
+function isDashboardMobileWidth(width: number) {
+  return width < DASHBOARD_MOBILE_BREAKPOINT;
+}
+
+function getBrowserViewportWidth() {
+  if (typeof window === 'undefined') return null;
+
+  return Math.max(
+    window.innerWidth || 0,
+    typeof document === 'undefined' ? 0 : document.documentElement?.clientWidth || 0,
+    window.visualViewport?.width || 0
+  );
+}
+
+function useDashboardWidth() {
+  const { width } = useWindowDimensions();
+  const [browserWidth, setBrowserWidth] = useState<number | null>(() => getBrowserViewportWidth());
+
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+
+    const updateBrowserWidth = () => {
+      setBrowserWidth(getBrowserViewportWidth());
+    };
+    const visualViewport = window.visualViewport;
+
+    updateBrowserWidth();
+    window.addEventListener('resize', updateBrowserWidth);
+    visualViewport?.addEventListener('resize', updateBrowserWidth);
+
+    return () => {
+      window.removeEventListener('resize', updateBrowserWidth);
+      visualViewport?.removeEventListener('resize', updateBrowserWidth);
+    };
+  }, []);
+
+  return Math.max(width || 0, browserWidth || 0);
+}
 
 function formatMoonTrend(value: string | null) {
   return value ?? 'Loading';
@@ -721,11 +763,11 @@ type DashboardScreenProps = {
 
 export default function DashboardScreen({ locked = false }: DashboardScreenProps = {}) {
   const router = useRouter();
-  const { width } = useWindowDimensions();
+  const width = useDashboardWidth();
   const today = new Date();
   const currentYear = today.getFullYear();
   const currentMonth = today.getMonth();
-  const isMobile = width < Breakpoints.tablet;
+  const isMobile = isDashboardMobileWidth(width);
   const [user, setUser] = useState<usersService.AuthUser | null>(() => usersService.getUser());
   const isLocked = locked && !user;
   const firstName = getFirstName(user);
@@ -1116,10 +1158,11 @@ export default function DashboardScreen({ locked = false }: DashboardScreenProps
         {/* ---------- MAIN CONTENT ---------- */}
         <ScrollView
           style={[styles.main, isMobile && styles.mobileSnapScroll]}
-          contentContainerStyle={[styles.mainContent, isMobile && styles.mainContentMobile]}
+          contentContainerStyle={[styles.mainScrollContent, isMobile && styles.mainScrollContentMobile]}
           decelerationRate={isMobile ? 'fast' : 'normal'}
           disableIntervalMomentum={isMobile}>
-          <View style={[styles.topBar, isMobile && styles.topBarMobile]}>
+          <View style={[styles.mainContent, isMobile && styles.mainContentMobile]} testID="dashboard-main-content">
+          <View style={[styles.topBar, isMobile && styles.topBarMobile]} testID="dashboard-topbar">
             <View style={styles.topBarCopy}>
               <Text style={styles.eyebrow}>
                 {`TONIGHT SKY - ${today.toLocaleDateString('en-US', {
@@ -1133,8 +1176,8 @@ export default function DashboardScreen({ locked = false }: DashboardScreenProps
               </Text>
             </View>
             {isLocked ? (
-              <View style={[styles.guestTopActions, isMobile && styles.guestTopActionsMobile]}>
-                <View style={[styles.locationChip, isMobile && styles.locationChipMobile]}>
+              <View style={[styles.guestTopActions, isMobile && styles.guestTopActionsMobile]} testID="dashboard-top-actions">
+                <View style={[styles.locationChip, isMobile && styles.locationChipMobile]} testID="dashboard-location-chip">
                   <Text style={styles.locationChipText} numberOfLines={1}>📍 {locationLabel}</Text>
                 </View>
                 <Pressable style={styles.topSignInButton} onPress={() => router.push('/login' as any)}>
@@ -1146,8 +1189,8 @@ export default function DashboardScreen({ locked = false }: DashboardScreenProps
                 <SoundToggle />
               </View>
             ) : (
-              <View style={[styles.guestTopActions, isMobile && styles.guestTopActionsMobile]}>
-                <View style={[styles.locationChip, isMobile && styles.locationChipMobile]}>
+              <View style={[styles.guestTopActions, isMobile && styles.guestTopActionsMobile]} testID="dashboard-top-actions">
+                <View style={[styles.locationChip, isMobile && styles.locationChipMobile]} testID="dashboard-location-chip">
                   <Text style={styles.locationChipText} numberOfLines={1}>📍 {locationLabel}</Text>
                 </View>
                 <SoundToggle />
@@ -1231,7 +1274,7 @@ export default function DashboardScreen({ locked = false }: DashboardScreenProps
           <SectionLabel text="YOUR TABS" />
 
           {/* ---------- PREVIEW CARDS ---------- */}
-          <View style={styles.previewGrid}>
+          <View style={styles.previewGrid} testID="dashboard-preview-grid">
             <PreviewCard
               eyebrow="CALENDAR"
               badge={calendarBadge}
@@ -1543,6 +1586,7 @@ export default function DashboardScreen({ locked = false }: DashboardScreenProps
           </View>
 
 
+          </View>
         </ScrollView>
       </View>
     </SafeAreaView>
@@ -1585,8 +1629,8 @@ function ViewingScoreBreakdown({
   score: number | null;
   inputs: NonNullable<ViewingScoreResponse['inputs']>;
 }) {
-  const { width } = useWindowDimensions();
-  const isMobile = width < Breakpoints.tablet;
+  const width = useDashboardWidth();
+  const isMobile = isDashboardMobileWidth(width);
   const darkness = inputs.darkness_factor ?? null;
   const clouds = inputs.clouds_pct ?? null;
   const light = inputs.light_pollution_level ?? null;
@@ -1696,17 +1740,20 @@ function PreviewCard({
   fullWidth?: boolean;
 }) {
   const router = useRouter();
-  const { width } = useWindowDimensions();
-  const isMobile = width < Breakpoints.tablet;
+  const width = useDashboardWidth();
+  const isMobile = isDashboardMobileWidth(width);
   const handlePress = locked ? () => router.push('/signup' as any) : onPress;
   const metaLineCount = isMobile ? 2 : 3;
 
   return (
     <Pressable
       style={[styles.previewCard, fullWidth && styles.previewCardFullWidth, isMobile && styles.previewCardMobile]}
+      testID={fullWidth ? 'dashboard-preview-card-full' : 'dashboard-preview-card'}
       onPress={handlePress}
       disabled={!handlePress}>
-      <View style={[styles.previewThumb, fullWidth && styles.previewThumbFullWidth, isMobile && styles.previewThumbMobile]}>
+      <View
+        style={[styles.previewThumb, fullWidth && styles.previewThumbFullWidth, isMobile && styles.previewThumbMobile]}
+        testID={fullWidth ? 'dashboard-preview-thumb-full' : 'dashboard-preview-thumb'}>
         <View style={locked ? styles.lockedThumbContent : styles.previewThumbContent}>
           {thumb}
         </View>
@@ -1969,8 +2016,8 @@ function IssThumb({
   pass: IssPass | null;
   variant?: 'card' | 'hero';
 }) {
-  const { width } = useWindowDimensions();
-  const isMobile = width < Breakpoints.tablet;
+  const width = useDashboardWidth();
+  const isMobile = isDashboardMobileWidth(width);
   const duration = formatIssDuration(pass?.visible_duration_sec ?? pass?.duration_sec);
   const passTime = pass ? formatIssClock(pass.rise?.time) : 'No pass found';
   const stats = (
@@ -2207,8 +2254,8 @@ function WeatherThumb({ weather }: { weather: WeatherResponse | null }) {
 }
 
 function WeatherBar({ label, value }: { label: string; value: number }) {
-  const { width } = useWindowDimensions();
-  const isMobile = width < Breakpoints.tablet;
+  const width = useDashboardWidth();
+  const isMobile = isDashboardMobileWidth(width);
 
   if (isMobile) {
     return (
@@ -2264,21 +2311,26 @@ const styles = StyleSheet.create({
     overscrollBehaviorY: 'contain',
     WebkitOverflowScrolling: 'touch',
   } as any,
-  mainContent: {
+  mainScrollContent: {
     padding: Spacing.lg,
     paddingLeft: 20,
     paddingBottom: Spacing.xxl,
-    gap: Spacing.md,
     width: '100%',
-    maxWidth: dvw(1040),
-    alignSelf: 'center',
+    alignItems: 'center',
   },
-  mainContentMobile: {
+  mainScrollContentMobile: {
     padding: Spacing.md,
     paddingTop: Spacing.md,
     paddingBottom: Spacing.lg,
+  },
+  mainContent: {
+    width: '100%',
+    maxWidth: DASHBOARD_MAX_CONTENT_WIDTH,
     gap: Spacing.md,
+  },
+  mainContentMobile: {
     maxWidth: '100%' as any,
+    gap: Spacing.md,
   },
   topBar: {
     marginBottom: 4,
@@ -2725,7 +2777,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: Spacing.sm,
-    justifyContent: 'space-between',
+    justifyContent: 'flex-start',
   },
   previewCard: {
     backgroundColor: Palette.surface,
@@ -2733,9 +2785,10 @@ const styles = StyleSheet.create({
     borderColor: Palette.borderSoft,
     borderRadius: Radius.md,
     overflow: 'hidden',
-    flexBasis: '31%',
-    flexGrow: 1,
-    minWidth: dvw(230),
+    flexBasis: '32%',
+    flexGrow: 0,
+    flexShrink: 1,
+    minWidth: 280,
   },
   previewCardMobile: {
     flexBasis: '100%',
@@ -2749,16 +2802,17 @@ const styles = StyleSheet.create({
   previewCardFullWidth: {
     flexBasis: '100%',
     minWidth: '100%' as any,
+    width: '100%',
   },
   previewThumb: {
-    height: dvh(168),
+    height: 168,
     backgroundColor: Palette.bgDeep,
     borderBottomWidth: 1,
     borderBottomColor: Palette.borderSoft,
     overflow: 'hidden',
   },
   previewThumbFullWidth: {
-    height: dvh(220),
+    height: 220,
   },
   previewThumbMobile: {
     height: 154,

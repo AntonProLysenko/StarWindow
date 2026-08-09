@@ -166,9 +166,7 @@ const styles = StyleSheet.create({
   cardMobile: {
     flexDirection: 'column',
     borderRadius: Radius.md,
-    scrollSnapAlign: 'start',
-    scrollSnapStop: 'always',
-  } as any,
+  },
   cardSaved: {
     borderColor: Palette.accentBlue,
   },

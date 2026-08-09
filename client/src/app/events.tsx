@@ -32,6 +32,9 @@ const FUTURE_DAYS_TO_SHOW = 365;
 const ALL = ALL_EVENT_FILTER;
 const FILTER_OPTIONS = EVENT_FILTER_OPTIONS;
 const EMPTY_EVENTS: EventListItem[] = [];
+const INITIAL_UPCOMING_EVENTS = 12;
+const INITIAL_PAST_EVENTS = 6;
+const EVENTS_PAGE_SIZE = 10;
 const PRIMARY_FILTERS: Set<string> = new Set(FILTER_OPTIONS);
 const CELESTIAL_TYPE_KEYWORDS = [
   'eclipse',
@@ -364,6 +367,8 @@ export default function EventsScreen() {
   ), [events]);
   const [activeTypes, setActiveTypes] = useState<string[]>([]);
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [upcomingLimit, setUpcomingLimit] = useState(INITIAL_UPCOMING_EVENTS);
+  const [pastLimit, setPastLimit] = useState(INITIAL_PAST_EVENTS);
 
   // Modal + user context (location for the viewing score, user_id for saving).
   const [selectedEvent, setSelectedEvent] = useState<EventListItem | null>(null);
@@ -399,6 +404,11 @@ export default function EventsScreen() {
   useEffect(() => {
     setSavedEventOverrides((current) => (current.size === 0 ? current : new Map()));
   }, [userId, eventsVersionKey]);
+
+  useEffect(() => {
+    setUpcomingLimit(INITIAL_UPCOMING_EVENTS);
+    setPastLimit(INITIAL_PAST_EVENTS);
+  }, [activeTypes, eventsVersionKey]);
 
   // Filter options are derived from the types actually present in the data,
   // with "All" always first. Order preserves first-seen (already chronological).
@@ -447,6 +457,14 @@ export default function EventsScreen() {
   const displayedEvents = useMemo(
     () => [...upcomingEvents, ...pastEvents],
     [pastEvents, upcomingEvents]
+  );
+  const visibleUpcomingEvents = useMemo(
+    () => upcomingEvents.slice(0, upcomingLimit),
+    [upcomingEvents, upcomingLimit]
+  );
+  const visiblePastEvents = useMemo(
+    () => pastEvents.slice(0, pastLimit),
+    [pastEvents, pastLimit]
   );
 
   function handleNavigateSelectedEvent(direction: 'next' | 'previous') {
@@ -610,33 +628,25 @@ export default function EventsScreen() {
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}>
           {upcomingEvents.length > 0 ? (
-            <View style={styles.timelineSection}>
-              {pastEvents.length > 0 ? (
-                <TimelineSectionLabel text="UPCOMING EVENTS" />
-              ) : null}
-              {upcomingEvents.map((event) => (
-                <EventCard
-                  key={`${event.category}-${event.id}`}
-                  event={event}
-                  isSaved={isSavedEvent(event)}
-                  onPress={handleEventClick}
-                />
-              ))}
-            </View>
+            <EventTimelineSection
+              label={pastEvents.length > 0 ? 'UPCOMING EVENTS' : null}
+              events={visibleUpcomingEvents}
+              totalCount={upcomingEvents.length}
+              isSavedEvent={isSavedEvent}
+              onEventPress={handleEventClick}
+              onLoadMore={() => setUpcomingLimit((current) => current + EVENTS_PAGE_SIZE)}
+            />
           ) : null}
 
           {pastEvents.length > 0 ? (
-            <View style={styles.timelineSection}>
-              <TimelineSectionLabel text="PAST EVENTS" />
-              {pastEvents.map((event) => (
-                <EventCard
-                  key={`${event.category}-${event.id}`}
-                  event={event}
-                  isSaved={isSavedEvent(event)}
-                  onPress={handleEventClick}
-                />
-              ))}
-            </View>
+            <EventTimelineSection
+              label="PAST EVENTS"
+              events={visiblePastEvents}
+              totalCount={pastEvents.length}
+              isSavedEvent={isSavedEvent}
+              onEventPress={handleEventClick}
+              onLoadMore={() => setPastLimit((current) => current + EVENTS_PAGE_SIZE)}
+            />
           ) : null}
         </ScrollView>
       )}
@@ -662,6 +672,50 @@ function TimelineSectionLabel({ text }: { text: string }) {
     <View style={styles.timelineSectionLabelRow}>
       <Text style={styles.timelineSectionLabel}>{text}</Text>
       <View style={styles.timelineSectionLine} />
+    </View>
+  );
+}
+
+function EventTimelineSection({
+  label,
+  events,
+  totalCount,
+  isSavedEvent,
+  onEventPress,
+  onLoadMore,
+}: {
+  label: string | null;
+  events: EventListItem[];
+  totalCount: number;
+  isSavedEvent: (event: EventListItem) => boolean;
+  onEventPress: (event: EventListItem) => void;
+  onLoadMore: () => void;
+}) {
+  const remaining = Math.max(totalCount - events.length, 0);
+
+  return (
+    <View style={styles.timelineSection}>
+      {label ? <TimelineSectionLabel text={label} /> : null}
+      {events.map((event) => (
+        <EventCard
+          key={`${event.category}-${event.id}`}
+          event={event}
+          isSaved={isSavedEvent(event)}
+          onPress={onEventPress}
+        />
+      ))}
+      {remaining > 0 ? (
+        <Pressable style={styles.loadMoreButton} onPress={onLoadMore}>
+          <Text style={styles.loadMoreText}>
+            Load {Math.min(EVENTS_PAGE_SIZE, remaining)} more
+          </Text>
+          <Text style={styles.loadMoreCount}>
+            {events.length} of {totalCount}
+          </Text>
+        </Pressable>
+      ) : totalCount > INITIAL_PAST_EVENTS ? (
+        <Text style={styles.sectionCompleteText}>Showing all {totalCount}</Text>
+      ) : null}
     </View>
   );
 }
@@ -819,6 +873,38 @@ const styles = StyleSheet.create({
   },
   timelineSection: {
     gap: 12,
+  },
+  loadMoreButton: {
+    minHeight: 44,
+    borderWidth: 1,
+    borderColor: Palette.borderSoft,
+    borderRadius: Radius.md,
+    backgroundColor: Palette.bgDeep,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 2,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+  },
+  loadMoreText: {
+    color: Palette.accent,
+    fontSize: 12,
+    lineHeight: 15,
+    fontWeight: '800',
+  },
+  loadMoreCount: {
+    color: Palette.textTertiary,
+    fontSize: 10,
+    lineHeight: 12,
+    fontWeight: '700',
+  },
+  sectionCompleteText: {
+    color: Palette.textTertiary,
+    fontSize: 11,
+    lineHeight: 14,
+    fontWeight: '700',
+    textAlign: 'center',
+    paddingVertical: 2,
   },
   timelineSectionLabelRow: {
     flexDirection: 'row',

@@ -24,15 +24,15 @@ export default function RootLayout() {
     const { width } = useWindowDimensions();
     const router = useRouter();
     const pathname = usePathname();
-    const [, setAuthRevision] = useState(0);
-    const isLoggedIn = Boolean(usersService.getUser());
+    const [currentUser, setCurrentUser] = useState<usersService.AuthUser | null>(() => usersService.getUser());
+    const isLoggedIn = Boolean(currentUser);
     const showSidebar = isLoggedIn && pathname !== '/signup' && pathname !== '/login';
     const isPublicRoute = pathname === '/' || pathname === '/login' || pathname === '/signup';
     const isMobile = width < Breakpoints.tablet;
 
     useEffect(() => {
       const syncAuthState = () => {
-        setAuthRevision((revision) => revision + 1);
+        setCurrentUser(usersService.getUser());
       };
 
       const unsubscribe = usersService.subscribeAuthChanges(syncAuthState);
