@@ -24,7 +24,7 @@ import { SoundToggle } from '@/components/sound-toggle';
 import { MonthGrid } from '@/components/calendar/month-grid';
 import { StarMap } from '@/components/star-map';
 import { useSharedEvents } from '@/context/events-context';
-import type { EventListItem } from '@/lib/events-api';
+import { fetchEventsList, type EventListItem } from '@/lib/events-api';
 import { fetchVisibleBodies, type VisibleBody } from '@/utilities/bodies-api';
 import {
   eventListItemToCalendarEvent,
@@ -666,6 +666,20 @@ function eventDetailRoute(input: EventDetailRouteParams) {
   return { pathname: '/events', params } as const;
 }
 
+function formatDateForQuery(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function getMonthWindow(year: number, month: number) {
+  return {
+    fromDate: formatDateForQuery(new Date(year, month, 1)),
+    toDate: formatDateForQuery(new Date(year, month + 1, 0)),
+  };
+}
+
 type DashboardScreenProps = {
   locked?: boolean;
 };
@@ -674,6 +688,8 @@ export default function DashboardScreen({ locked = false }: DashboardScreenProps
   const router = useRouter();
   const { width } = useWindowDimensions();
   const today = new Date();
+  const currentYear = today.getFullYear();
+  const currentMonth = today.getMonth();
   const isMobile = width < Breakpoints.tablet;
   const [user, setUser] = useState<usersService.AuthUser | null>(() => usersService.getUser());
   const isLocked = locked && !user;
@@ -683,14 +699,17 @@ export default function DashboardScreen({ locked = false }: DashboardScreenProps
   const levelProgressLabel = getUserLevelProgressLabel(user);
   const levelProgressPercent = getUserLevelProgressPercent(user);
   const [browserCoords, setBrowserCoords] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [lockedCalendarEventCount, setLockedCalendarEventCount] = useState<number | null>(null);
+  const [lockedCalendarEventCountError, setLockedCalendarEventCountError] = useState(false);
   const { events: sharedEvents, isLoading: isEventsLoading, error: eventsError } = useSharedEvents();
+  const currentMonthWindow = useMemo(() => getMonthWindow(currentYear, currentMonth), [currentYear, currentMonth]);
   const calendarEvents = useMemo(
     () => sharedEvents
       .map((event, index) => eventListItemToCalendarEvent(event, index))
       .filter((event): event is CalendarEvent => event !== null),
     [sharedEvents]
   );
-  const currentMonthEvents = getCalendarEventsForMonth(calendarEvents, today.getFullYear(), today.getMonth());
+  const currentMonthEvents = getCalendarEventsForMonth(calendarEvents, currentYear, currentMonth);
   const calendarTitle = today.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
   const nextCalendarEvent = getNextCalendarEvent(calendarEvents, today);
   const nextCalendarDate = nextCalendarEvent
@@ -699,11 +718,12 @@ export default function DashboardScreen({ locked = false }: DashboardScreenProps
         day: 'numeric',
       })
     : null;
-  const calendarBadge = isEventsLoading
+  const isLockedCalendarEventCountLoading = isLocked && lockedCalendarEventCount === null && !lockedCalendarEventCountError;
+  const calendarBadge = isEventsLoading || isLockedCalendarEventCountLoading
     ? 'LOADING'
-    : eventsError
+    : eventsError || lockedCalendarEventCountError
     ? 'UNAVAILABLE'
-    : formatCount(currentMonthEvents.length, 'EVENT', 'EVENTS');
+    : formatCount(lockedCalendarEventCount ?? currentMonthEvents.length, 'EVENT', 'EVENTS');
   const calendarMeta = isEventsLoading
     ? 'Loading upcoming events...'
     : eventsError
@@ -763,6 +783,43 @@ export default function DashboardScreen({ locked = false }: DashboardScreenProps
   useEffect(() => {
     ambientSound.ensureAmbientSound();
   }, []);
+
+  useEffect(() => {
+    if (!isLocked) {
+      setLockedCalendarEventCount(null);
+      setLockedCalendarEventCountError(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    setLockedCalendarEventCount(null);
+    setLockedCalendarEventCountError(false);
+
+    fetchEventsList({
+      includePast: true,
+      fromDate: currentMonthWindow.fromDate,
+      toDate: currentMonthWindow.toDate,
+      signal: controller.signal,
+    })
+      .then((events) => {
+        if (controller.signal.aborted) return;
+        const monthEvents = events
+          .map((event, index) => eventListItemToCalendarEvent(event, index))
+          .filter((event): event is CalendarEvent => event !== null);
+        setLockedCalendarEventCount(
+          getCalendarEventsForMonth(monthEvents, currentYear, currentMonth).length
+        );
+      })
+      .catch((error) => {
+        if (controller.signal.aborted || error?.name === 'AbortError') return;
+        setLockedCalendarEventCountError(true);
+        console.log('Locked calendar event count unavailable:', error);
+      });
+
+    return () => {
+      controller.abort();
+    };
+  }, [currentMonth, currentMonthWindow.fromDate, currentMonthWindow.toDate, currentYear, isLocked]);
 
   useEffect(() => {
     let isMounted = true;
@@ -1067,7 +1124,7 @@ export default function DashboardScreen({ locked = false }: DashboardScreenProps
           <SectionLabel text="ACCOUNT" /> */}
 
           {!isLocked ? (
-            <Pressable style={[styles.profileCard, isMobile && styles.profileCardMobile]} onPress={() => router.push('/profile')}>
+            <Pressable style={[styles.profileCard, isMobile && styles.profileCardMobile]} onPress={() => router.replace('/profile')}>
               <View style={styles.profileRing}>
                 <View style={styles.profileAvatar} />
               </View>
@@ -1139,7 +1196,7 @@ export default function DashboardScreen({ locked = false }: DashboardScreenProps
               title={calendarTitle}
               meta={calendarMeta}
               thumb={<CalendarThumb events={currentMonthEvents} />}
-              onPress={() => router.push('/calendar' as any)}
+              onPress={() => router.replace('/calendar' as any)}
               locked={isLocked}
             />
 
@@ -1150,7 +1207,7 @@ export default function DashboardScreen({ locked = false }: DashboardScreenProps
               title="Your Sky Tonight"
               meta={browserCoords ? locationLabel : 'Enable location for current sky map'}
               thumb={<MapThumb coords={browserCoords} locationLabel={locationLabel} />}
-              onPress={() => router.push(eventDetailRoute({
+              onPress={() => router.replace(eventDetailRoute({
                 category: 'event',
                 type: 'Sky Conditions',
                 name: 'Your Sky Tonight',
@@ -1183,7 +1240,7 @@ export default function DashboardScreen({ locked = false }: DashboardScreenProps
                   : formatLaunchMeta(nextLaunch)
               }
               thumb={<LaunchThumb imageUrl={nextLaunch?.image ?? null} />}
-              onPress={() => router.push(eventDetailRoute({
+              onPress={() => router.replace(eventDetailRoute({
                 eventId: nextLaunch?.event_id ?? null,
                 category: 'launch',
                 type: 'Rocket Launch',
@@ -1225,7 +1282,7 @@ export default function DashboardScreen({ locked = false }: DashboardScreenProps
                   : formatMeteorMeta(nextMeteorShower, Boolean(browserCoords))
               }
               thumb={<MeteorThumb shower={nextMeteorShower} isLoading={isMeteorLoading} hasLocation={Boolean(browserCoords)} />}
-              onPress={() => router.push(eventDetailRoute({
+              onPress={() => router.replace(eventDetailRoute({
                 eventId: nextMeteorShower?.event_id ?? nextMeteorShower?.id ?? null,
                 category: 'event',
                 type: nextMeteorShower?.type ?? 'Meteor Shower',

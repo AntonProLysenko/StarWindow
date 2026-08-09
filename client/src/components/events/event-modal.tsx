@@ -432,12 +432,19 @@ export function EventModal({
     setLiveLaunchLinks(null);
     if (!isLaunch || !event.name) return;
 
+    let isActive = true;
     const controller = new AbortController();
     fetchLaunchLinks({ name: event.name, date: event.date }, controller.signal)
-      .then(setLiveLaunchLinks)
+      .then((links) => {
+        if (!isActive || controller.signal.aborted) return;
+        setLiveLaunchLinks(links);
+      })
       .catch(() => {});
 
-    return () => controller.abort();
+    return () => {
+      isActive = false;
+      controller.abort();
+    };
   }, [isLaunch, event.name, event.date]);
 
   // --- fetch viewing score for the user's location (only if visible) ---
@@ -447,21 +454,28 @@ export function EventModal({
     setScoreLoading(false);
     if (suppressViewingScore || !visible || userLat == null || userLon == null) return;
 
+    let isActive = true;
     const controller = new AbortController();
     setScoreLoading(true);
     fetchViewingScore(userLat, userLon, controller.signal)
       .then((r) => {
+        if (!isActive || controller.signal.aborted) return;
         setScore(r.viewing_score);
         setScoreInputs(r.inputs ?? null);
       })
       .catch((err) => {
-        if ((err as Error).name !== 'AbortError') {
+        if (isActive && (err as Error).name !== 'AbortError') {
           setScore(null);
           setScoreInputs(null);
         }
       })
-      .finally(() => setScoreLoading(false));
-    return () => controller.abort();
+      .finally(() => {
+        if (isActive && !controller.signal.aborted) setScoreLoading(false);
+      });
+    return () => {
+      isActive = false;
+      controller.abort();
+    };
   }, [event.event_id, suppressViewingScore, visible, userLat, userLon]);
 
   // --- seed saved state ---

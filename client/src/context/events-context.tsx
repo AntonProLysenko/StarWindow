@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 
 import { fetchEventsList, type EventListItem } from '@/lib/events-api';
 
@@ -14,6 +14,12 @@ type EventsContextValue = {
 
 const EventsContext = createContext<EventsContextValue | null>(null);
 
+type EventsState = {
+  events: EventListItem[];
+  isLoading: boolean;
+  error: string | null;
+};
+
 export function EventsProvider({
   children,
   enabled = true,
@@ -21,38 +27,47 @@ export function EventsProvider({
   children: React.ReactNode;
   enabled?: boolean;
 }) {
-  const [events, setEvents] = useState<EventListItem[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [state, setState] = useState<EventsState>({
+    events: [],
+    isLoading: false,
+    error: null,
+  });
   const [refreshToken, setRefreshToken] = useState(0);
+  const requestIdRef = useRef(0);
 
   useEffect(() => {
     if (!enabled) {
-      setEvents([]);
-      setIsLoading(false);
-      setError(null);
+      requestIdRef.current += 1;
+      setState({ events: [], isLoading: false, error: null });
       return;
     }
 
     const controller = new AbortController();
+    const requestId = requestIdRef.current + 1;
+    requestIdRef.current = requestId;
 
     (async () => {
       try {
-        setIsLoading(true);
-        setError(null);
+        setState((current) => (
+          current.isLoading && current.error === null
+            ? current
+            : { ...current, isLoading: true, error: null }
+        ));
         const data = await fetchEventsList({
           includePast: true,
           pastDays: SHARED_EVENTS_PAST_DAYS,
           futureDays: SHARED_EVENTS_FUTURE_DAYS,
           signal: controller.signal,
         });
-        setEvents(data);
+        if (controller.signal.aborted || requestIdRef.current !== requestId) return;
+        setState({ events: data, isLoading: false, error: null });
       } catch (err) {
-        if ((err as Error).name !== 'AbortError') {
-          setError(err instanceof Error ? err.message : 'Could not load events.');
-        }
-      } finally {
-        if (!controller.signal.aborted) setIsLoading(false);
+        if (controller.signal.aborted || requestIdRef.current !== requestId || (err as Error).name === 'AbortError') return;
+        setState((current) => ({
+          ...current,
+          isLoading: false,
+          error: err instanceof Error ? err.message : 'Could not load events.',
+        }));
       }
     })();
 
@@ -61,12 +76,16 @@ export function EventsProvider({
     };
   }, [enabled, refreshToken]);
 
+  const refreshEvents = useCallback(() => {
+    setRefreshToken((current) => current + 1);
+  }, []);
+
   const value = useMemo<EventsContextValue>(() => ({
-    events,
-    isLoading,
-    error,
-    refreshEvents: () => setRefreshToken((current) => current + 1),
-  }), [events, error, isLoading]);
+    events: state.events,
+    isLoading: state.isLoading,
+    error: state.error,
+    refreshEvents,
+  }), [refreshEvents, state.error, state.events, state.isLoading]);
 
   return (
     <EventsContext.Provider value={value}>

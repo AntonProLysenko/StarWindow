@@ -1,7 +1,7 @@
 // Global looping space ambience, shared across screens (same module-singleton
 // pattern as user-location-service). Screens call ensureAmbientSound() on
-// mount and render <SoundToggle /> to control it; the sound keeps playing
-// across navigation instead of being tied to one screen's lifecycle.
+// mount and render <SoundToggle /> to control it. Non-sign-up screens keep it
+// muted by default until the user explicitly unmutes it.
 
 import { Audio } from 'expo-av';
 
@@ -9,7 +9,7 @@ const VOLUME = 0.4;
 
 let sound: Audio.Sound | null = null;
 let loading: Promise<void> | null = null;
-let muted = false;
+let muted = true;
 const listeners = new Set<() => void>();
 
 export function isMuted() {
@@ -28,15 +28,14 @@ function notify() {
 }
 
 /**
- * Start the ambience if it isn't already playing. Safe to call from every
- * screen. Browser autoplay policy may keep it paused until the first
- * toggleMuted() press (a user gesture) resumes it.
+ * Load the ambience if it isn't already loaded. Safe to call from every
+ * screen; muted screens stay paused until the first toggleMuted() press.
  */
 export function ensureAmbientSound(): Promise<void> {
   if (sound || loading) return loading ?? Promise.resolve();
 
   loading = Audio.Sound.createAsync(require('@/assets/sounds/space.mp3'), {
-    shouldPlay: true,
+    shouldPlay: !muted,
     isLooping: true,
     isMuted: muted,
     volume: muted ? 0 : VOLUME,
@@ -55,9 +54,8 @@ export function ensureAmbientSound(): Promise<void> {
 }
 
 /**
- * Flip mute for every listening screen. Also re-issues shouldPlay: the press
- * is a user gesture, so this recovers playback when the browser's autoplay
- * policy blocked the initial play() at load time.
+ * Flip mute for every listening screen. Unmuting happens from a user gesture,
+ * so this can also start playback when autoplay policy blocked initial audio.
  */
 export async function toggleMuted() {
   muted = !muted;
@@ -68,7 +66,7 @@ export async function toggleMuted() {
     await sound?.setStatusAsync({
       isMuted: muted,
       volume: muted ? 0 : VOLUME,
-      shouldPlay: true,
+      shouldPlay: !muted,
     });
   } catch (err) {
     console.error('[ambient-sound] toggle failed:', err);

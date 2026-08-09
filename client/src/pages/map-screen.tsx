@@ -91,6 +91,7 @@ export default function MapScreen() {
   // previous in-flight request is aborted.
   useEffect(() => {
     if (!userLocation) return;
+    let cancelled = false;
     const controller = new AbortController();
     const timer = setTimeout(async () => {
       try {
@@ -98,16 +99,18 @@ export default function MapScreen() {
           { lat: userLocation.lat, lon: userLocation.lng, radiusMiles },
           controller.signal
         );
+        if (cancelled || controller.signal.aborted) return;
         setUserScore(res.user_score);
         setBestSpot(res.best_spot);
       } catch (e) {
-        if ((e as Error)?.name !== 'AbortError') {
+        if (!cancelled && (e as Error)?.name !== 'AbortError') {
           console.warn('Failed to load best spot:', e);
         }
       }
     }, RADIUS_DEBOUNCE_MS);
 
     return () => {
+      cancelled = true;
       clearTimeout(timer);
       controller.abort();
     };

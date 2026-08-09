@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "client",
-    "slug": "client",
+    "name": "StarWindow",
+    "slug": "starwindow",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -25,7 +25,17 @@
     },
     "web": {
       "output": "static",
-      "favicon": "./assets/images/favicon.png"
+      "favicon": "./assets/images/favicon.png",
+      "name": "StarWindow",
+      "shortName": "StarWindow",
+      "description": "Sky conditions, events, launches, and light pollution tools for stargazing.",
+      "scope": "/",
+      "startUrl": "/",
+      "display": "standalone",
+      "orientation": "portrait",
+      "themeColor": "#020810",
+      "backgroundColor": "#000008",
+      "barStyle": "black-translucent"
     },
     "plugins": [
       "expo-router",

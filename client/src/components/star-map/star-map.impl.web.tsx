@@ -93,7 +93,7 @@ function goToLaunch(launch: LaunchPopupItem, site: RocketLaunch) {
     params[key] = String(value);
   }
 
-  router.push({ pathname: '/events', params });
+  router.replace({ pathname: '/events', params });
 }
 
 function isValidLatLng(lat: number, lng: number) {

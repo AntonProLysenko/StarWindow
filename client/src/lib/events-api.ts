@@ -231,6 +231,8 @@ type EventsListQuery = {
   includePast?: boolean;
   pastDays?: number;
   futureDays?: number;
+  fromDate?: string;
+  toDate?: string;
   signal?: AbortSignal;
 };
 
@@ -244,6 +246,8 @@ export async function fetchEventsList(input?: AbortSignal | EventsListQuery): Pr
   if (query.includePast) params.set('include_past', 'true');
   if (query.pastDays != null) params.set('past_days', String(query.pastDays));
   if (query.futureDays != null) params.set('future_days', String(query.futureDays));
+  if (query.fromDate) params.set('from_date', query.fromDate);
+  if (query.toDate) params.set('to_date', query.toDate);
   const url = `${API_BASE}/api/events/list${params.size > 0 ? `?${params}` : ''}`;
   const res = await fetch(url, { signal: query.signal });
   if (!res.ok) throw new Error(`events list request failed: ${res.status}`);

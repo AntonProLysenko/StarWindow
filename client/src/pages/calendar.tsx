@@ -284,19 +284,27 @@ export default function CalendarScreen() {
   }, []);
 
   useEffect(() => {
+    let isActive = true;
+
     if (userId == null) {
       setSavedEventIds(new Set());
-      return;
+      return () => {
+        isActive = false;
+      };
     }
 
     const controller = new AbortController();
     fetchSavedUserEvents(controller.signal)
       .then((savedEvents) => {
+        if (!isActive || controller.signal.aborted) return;
         setSavedEventIds(new Set(savedEvents.map((event) => String(event.event_id))));
       })
       .catch(() => {});
 
-    return () => controller.abort();
+    return () => {
+      isActive = false;
+      controller.abort();
+    };
   }, [userId]);
 
   useEffect(() => {

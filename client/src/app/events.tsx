@@ -5,7 +5,7 @@
 // visually distinct (see EventCard). Clicking a card is a placeholder for now —
 // phase 2 will route to a per-event detail page.
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { SymbolView } from 'expo-symbols';
 import {
   ActivityIndicator,
@@ -313,6 +313,8 @@ export default function EventsScreen() {
   const [activeTypes, setActiveTypes] = useState<string[]>([]);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const listRef = useRef<ScrollView>(null);
+  const isMountedRef = useRef(false);
+  const alignFrameRef = useRef<ReturnType<typeof requestAnimationFrame> | null>(null);
   const [upcomingAnchorY, setUpcomingAnchorY] = useState<number | null>(null);
   const [didAlignToUpcoming, setDidAlignToUpcoming] = useState(false);
 
@@ -324,34 +326,60 @@ export default function EventsScreen() {
   const [savedEventIds, setSavedEventIds] = useState<Set<string>>(() => new Set());
   const userId = getUser()?.user_id ?? null;
 
+  useEffect(() => {
+    isMountedRef.current = true;
+
+    return () => {
+      isMountedRef.current = false;
+      if (alignFrameRef.current != null) {
+        cancelAnimationFrame(alignFrameRef.current);
+        alignFrameRef.current = null;
+      }
+    };
+  }, []);
+
   // Resolve the user's location once (best-effort — modal degrades without it).
   useEffect(() => {
+    let isActive = true;
+
     (async () => {
       try {
         const location = await getOrRequestUserLocation();
-        if (!location) return;
+        if (!isActive || !location) return;
         setUserLat(location.latitude);
         setUserLon(location.longitude);
       } catch {
         // Location unavailable — score section shows an "enable location" note.
       }
     })();
+
+    return () => {
+      isActive = false;
+    };
   }, []);
 
   useEffect(() => {
+    let isActive = true;
+
     if (userId == null) {
       setSavedEventIds(new Set());
-      return;
+      return () => {
+        isActive = false;
+      };
     }
 
     const controller = new AbortController();
     fetchSavedUserEvents(controller.signal)
       .then((savedEvents) => {
+        if (!isActive || controller.signal.aborted) return;
         setSavedEventIds(new Set(savedEvents.map((event) => String(event.event_id))));
       })
       .catch(() => {});
 
-    return () => controller.abort();
+    return () => {
+      isActive = false;
+      controller.abort();
+    };
   }, [userId]);
 
   // Filter options are derived from the types actually present in the data,
@@ -421,17 +449,24 @@ export default function EventsScreen() {
     setUpcomingAnchorY(null);
   }, [activeTypes]);
 
-  function alignToUpcoming() {
+  const alignToUpcoming = useCallback(() => {
     if (didAlignToUpcoming || upcomingAnchorY == null || loading) return;
-    requestAnimationFrame(() => {
+
+    if (alignFrameRef.current != null) {
+      cancelAnimationFrame(alignFrameRef.current);
+    }
+
+    alignFrameRef.current = requestAnimationFrame(() => {
+      alignFrameRef.current = null;
+      if (!isMountedRef.current) return;
       listRef.current?.scrollTo({ y: Math.max(upcomingAnchorY - 4, 0), animated: false });
       setDidAlignToUpcoming(true);
     });
-  }
+  }, [didAlignToUpcoming, loading, upcomingAnchorY]);
 
   useEffect(() => {
     alignToUpcoming();
-  }, [upcomingAnchorY, loading, didAlignToUpcoming]);
+  }, [alignToUpcoming]);
 
   useEffect(() => {
     if (!routeEventKey || openedRouteEventKey === routeEventKey || loading) return;

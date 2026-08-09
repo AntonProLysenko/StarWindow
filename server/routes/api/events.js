@@ -27,8 +27,10 @@ router.get("/list", async (req, res) => {
     const includePast = String(req.query.include_past ?? "").toLowerCase() === "true";
     const pastDays = req.query.past_days == null ? undefined : Number(req.query.past_days);
     const futureDays = req.query.future_days == null ? undefined : Number(req.query.future_days);
+    const fromDate = req.query.from_date;
+    const toDate = req.query.to_date;
     const results = includePast
-      ? await eventService.getTimelineList({ includePast, pastDays, futureDays })
+      ? await eventService.getTimelineList({ includePast, pastDays, futureDays, fromDate, toDate })
       : await eventService.getUpcomingList();
     res.json(results);
   } catch (error) {

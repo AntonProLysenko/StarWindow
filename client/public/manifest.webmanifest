@@ -1,0 +1,19 @@
+{
+  "name": "StarWindow",
+  "short_name": "StarWindow",
+  "description": "Sky conditions, events, launches, and light pollution tools for stargazing.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "theme_color": "#020810",
+  "background_color": "#000008",
+  "icons": [
+    {
+      "src": "/apple-touch-icon.png",
+      "sizes": "1024x1024",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

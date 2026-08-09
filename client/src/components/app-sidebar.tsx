@@ -51,6 +51,11 @@ export function AppSidebar() {
     router.replace('/');
   };
 
+  const handleNavigate = (href: (typeof navItems)[number]['href']) => {
+    if (pathname === href) return;
+    router.replace(href);
+  };
+
   return (
     <View
       style={[
@@ -74,7 +79,7 @@ export function AppSidebar() {
             <Pressable
               key={item.href}
               accessibilityLabel={item.label}
-              onPress={() => router.push(item.href)}
+              onPress={() => handleNavigate(item.href)}
               style={[styles.railTab, isTablet && styles.tabletTab, isMobile && styles.mobileTab, active && styles.railTabActive]}>
               {active && <View style={[styles.railTabIndicator, isTablet && styles.tabletTabIndicator, isMobile && styles.mobileTabIndicator]} />}
               {useIconTabs ? (

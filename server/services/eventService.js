@@ -306,12 +306,12 @@ async function buildUpcomingListFromCache(now, nextYear) {
   });
 }
 
-async function getTimelineList({ includePast = false, pastDays = 365, futureDays = 365 } = {}) {
+async function getTimelineList({ includePast = false, pastDays = 365, futureDays = 365, fromDate, toDate } = {}) {
   if (!includePast) return getUpcomingList();
 
   const now = new Date();
-  const windowStart = new Date(now.getTime() - pastDays * 24 * 60 * 60 * 1000);
-  const windowEnd = new Date(now.getTime() + futureDays * 24 * 60 * 60 * 1000);
+  const windowStart = fromDate ? new Date(fromDate) : new Date(now.getTime() - pastDays * 24 * 60 * 60 * 1000);
+  const windowEnd = toDate ? new Date(toDate) : new Date(now.getTime() + futureDays * 24 * 60 * 60 * 1000);
   const refreshWindow = {
     fromDate: windowStart.toISOString(),
     toDate: windowEnd.toISOString(),
