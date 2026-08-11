@@ -437,7 +437,9 @@ async function persistVisibleBodyEvent(input = {}) {
     eventType: VISIBLE_BODY_EVENT_TYPE,
     webcastLive: false,
     videoUrl: null,
-    infoUrl: serializeVisibleBodyPayload(visibleBodies),
+    // events.info_url is constrained to HTTP(S) URLs; visible-body details live
+    // in the human-readable description and are parsed back for saved events.
+    infoUrl: null,
     imageUrl: normalizeNullableString(input.image_url) || firstVisibleBodyImage(visibleBodies),
     locationId: await resolveVisibleBodyLocationId(input),
   });
@@ -477,13 +479,6 @@ async function resolveVisibleBodyLocationId(input) {
     name: normalizeNullableString(input.location),
   });
   return location.location_id;
-}
-
-function serializeVisibleBodyPayload(visibleBodies) {
-  return JSON.stringify({
-    kind: "visible_bodies",
-    visible_bodies: visibleBodies,
-  });
 }
 
 function normalizePersistedEventDate(value) {
