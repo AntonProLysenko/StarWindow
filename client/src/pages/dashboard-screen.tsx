@@ -1263,17 +1263,7 @@ export default function DashboardScreen({ locked = false }: DashboardScreenProps
               title="Your Sky Tonight"
               meta={browserCoords ? locationLabel : 'Enable location for current sky map'}
               thumb={<MapThumb coords={browserCoords} locationLabel={locationLabel} />}
-              onPress={() => router.replace(eventDetailRoute({
-                category: 'event',
-                type: 'Sky Conditions',
-                name: 'Your Sky Tonight',
-                date: today.toISOString(),
-                description: [locationMessage, getSkyGreeting(viewingScore, viewingScoreStatus)]
-                  .filter(Boolean)
-                  .join(' | '),
-                location: browserCoords ? locationLabel : null,
-                synthetic: true,
-              }) as any)}
+              onPress={() => router.replace('/map' as any)}
               locked={isLocked}
             />
 

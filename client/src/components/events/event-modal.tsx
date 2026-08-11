@@ -55,6 +55,10 @@ const INFO_LINK_ACCENT = '#B46CFF';
 const OTHER_LINK_ACCENT = '#5EA88E';
 const OTHER_LINK_TEXT = Palette.textPrimary;
 const MOBILE_NAV_RESERVED_HEIGHT = 88;
+const VISIBLE_BODY_IMAGE_FALLBACKS: Record<string, string> = {
+  pluto: 'https://d2pn8kiwq2w21t.cloudfront.net/original_images/jpegPIA19857.jpg',
+  venus: 'https://images-assets.nasa.gov/image/PIA00104/PIA00104~medium.jpg',
+};
 
 // ImgBB upload — reads the key from EXPO_PUBLIC_IMGBB_API_KEY (see .env).
 const IMGBB_API_KEY = process.env.EXPO_PUBLIC_IMGBB_API_KEY;
@@ -146,6 +150,8 @@ export function EventModal({
   const scrollRef = useRef<ScrollView>(null);
   const visibleBodyCarouselActiveRef = useRef(false);
   const fullScreenImageActiveRef = useRef(false);
+  const textInputFocusedRef = useRef(false);
+  const onCloseRef = useRef(onClose);
   const swipeAnimatingRef = useRef(false);
   const pendingSwipeDirectionRef = useRef<'next' | 'previous' | null>(null);
   const swipeX = useRef(new Animated.Value(0)).current;
@@ -198,13 +204,26 @@ export function EventModal({
     fullScreenImageActiveRef.current = Boolean(fullScreenImage);
   }, [fullScreenImage]);
 
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
+
+  function handleTextInputFocus() {
+    textInputFocusedRef.current = true;
+  }
+
+  function handleTextInputBlur() {
+    textInputFocusedRef.current = false;
+  }
+
   function canHandleEventSwipe() {
     return Boolean(
       isSwipeLayout &&
       onNavigateEvent &&
       !swipeAnimatingRef.current &&
       !fullScreenImageActiveRef.current &&
-      !visibleBodyCarouselActiveRef.current
+      !visibleBodyCarouselActiveRef.current &&
+      !textInputFocusedRef.current
     );
   }
 
@@ -251,12 +270,14 @@ export function EventModal({
     () => {
       return PanResponder.create({
         onMoveShouldSetPanResponderCapture: (_evt, gestureState) => {
+          if (isTextEntryEventTarget((_evt.nativeEvent as { target?: unknown })?.target)) return false;
           if (!canHandleEventSwipe()) return false;
           const absX = Math.abs(gestureState.dx);
           const absY = Math.abs(gestureState.dy);
           return absX > 18 && absX > absY * 1.25;
         },
         onMoveShouldSetPanResponder: (_evt, gestureState) => {
+          if (isTextEntryEventTarget((_evt.nativeEvent as { target?: unknown })?.target)) return false;
           if (!canHandleEventSwipe()) return false;
           const absX = Math.abs(gestureState.dx);
           const absY = Math.abs(gestureState.dy);
@@ -310,6 +331,10 @@ export function EventModal({
     let horizontalIntent = false;
 
     const onTouchStart = (event: TouchEvent) => {
+      if (isTextEntryEventTarget(event.target)) {
+        tracking = false;
+        return;
+      }
       if (!canHandleEventSwipe() || event.touches.length !== 1) {
         tracking = false;
         return;
@@ -399,13 +424,16 @@ export function EventModal({
       node.setAttribute('aria-modal', 'true');
       node.setAttribute('aria-label', event.name);
       node.setAttribute('tabindex', '-1');
-      node.focus();
+      const activeElement = document.activeElement as HTMLElement | null;
+      if (!activeElement || !node.contains(activeElement)) {
+        node.focus({ preventScroll: true });
+      }
     }
 
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault();
-        onClose();
+        onCloseRef.current();
         return;
       }
       if (e.key === 'Tab' && node) {
@@ -439,7 +467,7 @@ export function EventModal({
       document.documentElement.style.overscrollBehavior = previousHtmlOverscroll;
       trigger?.focus?.();
     };
-  }, [event.name, onClose]);
+  }, [event.name]);
 
   useEffect(() => {
     setLiveLaunchLinks(null);
@@ -844,6 +872,7 @@ export function EventModal({
               style={styles.scroll}
               contentContainerStyle={[styles.scrollContent, isTablet && styles.scrollContentTablet, isMobile && styles.scrollContentMobile]}
               showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
               scrollEnabled={!fullScreenImage && !visibleBodyCarouselActive}>
               {/* Enlarged image / fallback */}
               <View style={[styles.hero, isTablet && styles.heroTablet, isMobile && styles.heroMobile]}>
@@ -1040,6 +1069,8 @@ export function EventModal({
                         multiline
                         textAlignVertical="top"
                         style={[styles.noteInput, isMobile && styles.noteInputMobile]}
+                        onFocus={handleTextInputFocus}
+                        onBlur={handleTextInputBlur}
                         editable={!noteBusy}
                       />
                       <View style={[styles.noteActions, isMobile && styles.noteActionsMobile]}>
@@ -1156,6 +1187,8 @@ export function EventModal({
                         multiline
                         textAlignVertical="top"
                         style={[styles.noteInput, isMobile && styles.noteInputMobile]}
+                        onFocus={handleTextInputFocus}
+                        onBlur={handleTextInputBlur}
                         editable={!imageUploading}
                       />
                       <View style={[styles.noteActions, isMobile && styles.noteActionsMobile]}>
@@ -1613,7 +1646,32 @@ function getVisibleBodies(event: EventListItem): VisibleBodyEventItem[] {
 
   return [...event.visible_bodies]
     .filter((body) => body.body)
+    .map(withVisibleBodyFallbackImage)
     .sort((a, b) => (toFiniteNumber(b.altitude_degrees) ?? -Infinity) - (toFiniteNumber(a.altitude_degrees) ?? -Infinity));
+}
+
+function withVisibleBodyFallbackImage(body: VisibleBodyEventItem): VisibleBodyEventItem {
+  const imageUrl = normalizeOptionalString(body.image_url) ?? VISIBLE_BODY_IMAGE_FALLBACKS[normalizeBodyName(body.body)];
+  if (!imageUrl || imageUrl === body.image_url) return body;
+  return {
+    ...body,
+    image_url: imageUrl,
+    image_source: body.image_source ?? 'NASA Images',
+  };
+}
+
+function normalizeBodyName(value: string) {
+  return value.trim().toLowerCase();
+}
+
+function normalizeOptionalString(value: string | null | undefined) {
+  const text = String(value ?? '').trim();
+  return text || null;
+}
+
+function isTextEntryEventTarget(target: unknown) {
+  if (Platform.OS !== 'web' || typeof Element === 'undefined' || !(target instanceof Element)) return false;
+  return Boolean(target.closest('input, textarea, select, [contenteditable="true"], [role="textbox"]'));
 }
 
 function getSavedEventImages(event: EventListItem): SavedUserEventImage[] {

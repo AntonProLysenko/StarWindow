@@ -8,7 +8,6 @@
     "scheme": "client",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/expo.icon",
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "StarWindow uses your location to show sky conditions and light pollution near you."
       }
@@ -42,7 +41,7 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#208AEF",
+          "backgroundColor": "#020810",
           "android": {
             "image": "./assets/images/splash-icon.png",
             "imageWidth": 76

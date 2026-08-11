@@ -63,11 +63,11 @@ export function AnimatedIcon() {
       </Animated.View>
 
       <Animated.View style={styles.background} entering={keyframe.duration(DURATION)}>
-        <div className={classes.expoLogoBackground} />
+        <div className={classes.logoBackground} />
       </Animated.View>
 
       <Animated.View style={styles.imageContainer} entering={logoKeyframe.duration(DURATION)}>
-        <Image style={styles.image} source={require('@/assets/images/expo-logo.png')} />
+        <Image style={styles.image} source={require('@/assets/images/logo_starwindow.png')} />
       </Animated.View>
     </View>
   );
@@ -98,8 +98,8 @@ const styles = StyleSheet.create({
   },
   image: {
     position: 'absolute',
-    width: dvw(76),
-    height: dvh(71),
+    width: dvw(82),
+    height: dvh(82),
   },
   background: {
     width: 128,

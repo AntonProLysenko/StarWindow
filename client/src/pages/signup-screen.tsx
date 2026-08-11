@@ -50,8 +50,8 @@ export default function SignUpScreen() {
   const signInGlow = useRef(new Animated.Value(0)).current;
   const newUserGlow = useRef(new Animated.Value(0)).current;
   const soundRef = useRef<Audio.Sound | null>(null);
-  const [isMuted, setIsMuted] = useState(false);
-  const isMutedRef = useRef(false);
+  const [isMuted, setIsMuted] = useState(true);
+  const isMutedRef = useRef(true);
 
   useEffect(() => {
     const sub = Dimensions.addEventListener('change', ({ window }) => {
@@ -65,7 +65,12 @@ export default function SignUpScreen() {
       try {
         const { sound } = await Audio.Sound.createAsync(
           require('@/assets/sounds/space.mp3'),
-          { shouldPlay: true, volume: isMutedRef.current ? 0 : 0.4, isLooping: true, isMuted: isMutedRef.current }
+          {
+            shouldPlay: !isMutedRef.current,
+            volume: isMutedRef.current ? 0 : 0.4,
+            isLooping: true,
+            isMuted: isMutedRef.current,
+          }
         );
         soundRef.current = sound;
       } catch (e) {
@@ -96,6 +101,7 @@ export default function SignUpScreen() {
       await soundRef.current?.setStatusAsync({
         isMuted: next,
         volume: next ? 0 : 0.4,
+        shouldPlay: !next,
       });
     } catch (e) {
       console.log('Sound toggle error:', e);
