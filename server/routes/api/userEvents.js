@@ -17,7 +17,7 @@ router.get("/", ensureLoggedIn, async (req, res) => {
   try {
     const row = await userEventQueries.getUserEvent(req.user.user_id, event_id);
     res.json({
-      saved: Boolean(row),
+      saved: Boolean(row?.is_saved),
       user_event_id: row?.user_event_id ?? null,
       event_comment: row?.event_comment ?? null,
       event_rating: row?.event_rating ?? null,

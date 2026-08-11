@@ -12,6 +12,7 @@ const database = require("../../config/database");
 const levelingQueries = require("./leveling");
 
 let userEventImagesDeleteUrlColumnReady = false;
+let userEventsSavedColumnReady = false;
 
 module.exports = {
   saveUserEvent,
@@ -36,13 +37,14 @@ async function saveUserEvent(userId, eventId) {
 
   try {
     await client.query("BEGIN");
+    await ensureUserEventsSavedColumn(client);
 
     const inserted = await client.query(
       `
-        INSERT INTO public.user_events (user_id, event_id)
-        VALUES ($1, $2)
+        INSERT INTO public.user_events (user_id, event_id, is_saved)
+        VALUES ($1, $2, true)
         ON CONFLICT (user_id, event_id) DO NOTHING
-        RETURNING user_event_id, user_id, event_id
+        RETURNING user_event_id, user_id, event_id, is_saved
       `,
       [userId, eventId]
     );
@@ -62,9 +64,31 @@ async function saveUserEvent(userId, eventId) {
     // Conflict -> it was already saved; return the existing row so the client can
     // still learn its user_event_id (needed to unsave).
     const existing = await client.query(
-      "SELECT user_event_id, user_id, event_id FROM public.user_events WHERE user_id = $1 AND event_id = $2 LIMIT 1",
+      "SELECT user_event_id, user_id, event_id, is_saved FROM public.user_events WHERE user_id = $1 AND event_id = $2 LIMIT 1",
       [userId, eventId]
     );
+
+    if (existing.rows[0] && !existing.rows[0].is_saved) {
+      const restored = await client.query(
+        `
+          UPDATE public.user_events
+          SET is_saved = true
+          WHERE user_event_id = $1
+            AND user_id = $2
+          RETURNING user_event_id, user_id, event_id, is_saved
+        `,
+        [existing.rows[0].user_event_id, userId]
+      );
+      const progress = await levelingQueries.awardUserPoints(
+        userId,
+        "save_event",
+        "user_event",
+        sourceKeys.save(restored.rows[0].user_event_id),
+        client
+      );
+      await client.query("COMMIT");
+      return { ...restored.rows[0], already_saved: false, progress };
+    }
 
     await client.query("COMMIT");
     return { ...existing.rows[0], already_saved: true, progress: null };
@@ -77,17 +101,16 @@ async function saveUserEvent(userId, eventId) {
 }
 
 /**
- * Remove a saved event by its user_event_id.
+ * Mark a saved event as unsaved by its user_event_id while preserving notes/photos.
  * @param {number|string} userEventId
  * @returns {Promise<boolean>} true if a row was deleted.
  */
 async function deleteUserEvent(userEventId, userId = null) {
   const client = await database.connect();
-  let imgbbDeleteUrls = [];
 
   try {
     await client.query("BEGIN");
-    await ensureUserEventImagesDeleteUrlColumn(client);
+    await ensureUserEventsSavedColumn(client);
 
     const params = userId == null ? [userEventId] : [userEventId, userId];
     const ownershipClause = userId == null ? "" : "AND ue.user_id = $2";
@@ -99,12 +122,13 @@ async function deleteUserEvent(userEventId, userId = null) {
           ue.event_id,
           ue.event_comment,
           ue.event_rating,
+          ue.is_saved,
           COUNT(uei.user_event_image_id) AS image_count
         FROM public.user_events ue
         LEFT JOIN public.user_event_images uei ON uei.user_event_id = ue.user_event_id
         WHERE ue.user_event_id = $1
           ${ownershipClause}
-        GROUP BY ue.user_event_id, ue.user_id, ue.event_id, ue.event_comment, ue.event_rating
+        GROUP BY ue.user_event_id, ue.user_id, ue.event_id, ue.event_comment, ue.event_rating, ue.is_saved
         LIMIT 1
       `,
       params
@@ -116,12 +140,22 @@ async function deleteUserEvent(userEventId, userId = null) {
     }
 
     const savedEvent = existing.rows[0];
-    imgbbDeleteUrls = await getUserEventImageDeleteUrls(savedEvent.user_event_id, client);
-    const reversals = await reverseSavedEventMechanics(savedEvent, client);
+    const reversals = savedEvent.is_saved
+      ? [
+          await reverseWithFallback(
+            savedEvent.user_id,
+            "save_event",
+            "user_event",
+            [sourceKeys.save(savedEvent.user_event_id), sourceKeys.legacyEvent(savedEvent.event_id)],
+            client
+          ),
+        ].filter(Boolean)
+      : [];
 
-    const deleted = await client.query(
+    const updated = await client.query(
       `
-        DELETE FROM public.user_events
+        UPDATE public.user_events
+        SET is_saved = false
         WHERE user_event_id = $1
           AND user_id = $2
         RETURNING user_event_id
@@ -130,15 +164,15 @@ async function deleteUserEvent(userEventId, userId = null) {
     );
 
     await client.query("COMMIT");
-    const imgbbDeletions = await deleteImagesFromImgbb(imgbbDeleteUrls, {
-      userId: savedEvent.user_id,
-      userEventId: savedEvent.user_event_id,
-    });
     return {
-      deleted: deleted.rows.length > 0,
+      deleted: updated.rows.length > 0,
       user_event_id: savedEvent.user_event_id,
       reversals,
-      imgbb_deletions: imgbbDeletions,
+      preserved: {
+        event_comment: savedEvent.event_comment || null,
+        event_rating: savedEvent.event_rating ?? null,
+        image_count: Number(savedEvent.image_count ?? 0),
+      },
     };
   } catch (error) {
     await client.query("ROLLBACK");
@@ -154,10 +188,12 @@ async function deleteUserEvent(userEventId, userId = null) {
  * @returns {Promise<{user_event_id}|null>}
  */
 async function getUserEvent(userId, eventId) {
+  await ensureUserEventsSavedColumn();
   const result = await database.query(
     `
       SELECT
         ue.user_event_id,
+        ue.is_saved,
         ue.event_comment,
         ue.event_rating,
         COALESCE((
@@ -191,12 +227,14 @@ async function getUserEventLookup(userId, eventIds) {
   )];
 
   if (!userId || ids.length === 0) return new Map();
+  await ensureUserEventsSavedColumn();
 
   const result = await database.query(
     `
       SELECT
         ue.event_id,
         ue.user_event_id,
+        ue.is_saved,
         ue.event_comment,
         ue.event_rating,
         COALESCE((
@@ -215,6 +253,7 @@ async function getUserEventLookup(userId, eventIds) {
       FROM public.user_events ue
       WHERE ue.user_id = $1
         AND ue.event_id = ANY($2::bigint[])
+        AND ue.is_saved = true
     `,
     [userId, ids]
   );
@@ -465,6 +504,7 @@ async function deleteUserEventImage(userId, userEventId, userEventImageId) {
  * @returns {Promise<Array<object>>}
  */
 async function getSavedEventsForUser(userId) {
+  await ensureUserEventsSavedColumn();
   const result = await database.query(
     `
       SELECT
@@ -533,6 +573,7 @@ async function getSavedEventsForUser(userId) {
       LEFT JOIN public.pads pad ON pad.pad_id = rl.pad_id
       LEFT JOIN public.locations pad_loc ON pad_loc.location_id = pad.location_id
       WHERE ue.user_id = $1
+        AND ue.is_saved = true
       ORDER BY e.start_time ASC, ue.user_event_id ASC
     `,
     [userId]
@@ -721,6 +762,17 @@ async function ensureUserEventImagesDeleteUrlColumn(client) {
     "ALTER TABLE public.user_event_images ADD COLUMN IF NOT EXISTS imgbb_delete_url text"
   );
   userEventImagesDeleteUrlColumnReady = true;
+}
+
+async function ensureUserEventsSavedColumn(client = database) {
+  if (userEventsSavedColumnReady) return;
+  await client.query(
+    "ALTER TABLE public.user_events ADD COLUMN IF NOT EXISTS is_saved boolean NOT NULL DEFAULT true"
+  );
+  await client.query(
+    "UPDATE public.user_events SET is_saved = true WHERE is_saved IS NULL"
+  );
+  userEventsSavedColumnReady = true;
 }
 
 function normalizeImgbbDeleteUrl(value) {

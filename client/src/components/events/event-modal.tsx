@@ -627,16 +627,17 @@ export function EventModal({
       }
     } else {
       // Optimistic unsave.
-      const prevId = savedId;
+      let prevId = savedId;
       setSaved(false);
       setSaveBusy(true);
       try {
+        if (!prevId && isNumericEventId(saveableEventId)) {
+          const current = await checkEventSaved(saveableEventId);
+          prevId = current.user_event_id;
+        }
+        if (!prevId) throw new Error('Saved event not found');
         if (prevId) await deleteUserEvent(prevId);
         setSavedId(null);
-        setNote('');
-        setSavedNote('');
-        setImages([]);
-        onSavedEventUpdated?.({ event_comment: null });
         onSavedStateChange?.(event.event_id, false);
         onSavedStateChange?.(saveableEventId, false);
       } catch {
